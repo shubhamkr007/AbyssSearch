@@ -1,0 +1,48 @@
+# Local development infrastructure for the Enterprise Search platform.
+# Phase 1 brings up the two stores S4 (Tenant/Config Service) depends on.
+#
+# Note (Windows/macOS, zero-cost): run with Podman Desktop, Rancher Desktop, or
+# Docker Engine on WSL2 to avoid Docker Desktop licensing. All commands below
+# work with `docker compose` or `podman compose`.
+#
+#   docker compose -f infra/docker-compose.yml up -d
+#
+# Then, from services/tenant-config:
+#   pnpm prisma migrate dev   # create/apply schema
+#   pnpm seed                 # demo tenant + API key
+#   pnpm start:dev            # run the service against this infra
+
+name: enterprise-search
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: es-postgres
+    environment:
+      POSTGRES_USER: tenant_config
+      POSTGRES_PASSWORD: tenant_config
+      POSTGRES_DB: tenant_config
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tenant_config -d tenant_config"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: es-valkey
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

@@ -1,0 +1,102 @@
+// S4 Tenant/Config Service - config data model.
+// NOTE (MVP): tables live in the default schema for zero-friction local dev.
+// The master plan separates `config` and `ingestion` Postgres schemas with
+// per-service roles; splitting into a dedicated `config` schema (Prisma
+// multiSchema) is a documented follow-up once the ingestion service lands.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  prefix    String   @unique // immutable; used in ES index names
+  status    String   @default("active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  apiKeys      ApiKey[]
+  sources      Source[]
+  tabs         TabConfig[]
+  searchConfig SearchConfig?
+
+  @@map("tenants")
+}
+
+model ApiKey {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  keyPrefix       String   @map("key_prefix") // e.g. 'pk_live_ab12' for display + lookup
+  keyHash         String   @map("key_hash") // argon2id hash of the full key
+  scopes          String[] @default(["search"])
+  originAllowlist String[] @default([]) @map("origin_allowlist")
+  rateLimit       Int      @default(60) @map("rate_limit") // requests/min
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([keyPrefix])
+  @@index([tenantId])
+  @@map("api_keys")
+}
+
+model Source {
+  id              String  @id @default(uuid()) @db.Uuid
+  tenantId        String  @map("tenant_id") @db.Uuid
+  type            String // document|news|image|rest|db|folder
+  name            String
+  connectorConfig Json    @default("{}") @map("connector_config")
+  schedule        String? // cron or null
+  enabled         Boolean @default(true)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("sources")
+}
+
+model TabConfig {
+  id           String  @id @default(uuid()) @db.Uuid
+  tenantId     String  @map("tenant_id") @db.Uuid
+  tabKey       String  @map("tab_key") // all|documents|news|images
+  label        String
+  sourceFilter Json    @default("{}") @map("source_filter")
+  position     Int     @default(0)
+  enabled      Boolean @default(true)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("tab_config")
+}
+
+model SearchConfig {
+  tenantId      String @id @map("tenant_id") @db.Uuid
+  synonyms      Json   @default("[]")
+  boosts        Json   @default("{}")
+  facets        Json   @default("[]")
+  suggestConfig Json   @default("{}") @map("suggest_config")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("search_config")
+}
+
+model AuditLog {
+  id        BigInt   @id @default(autoincrement())
+  tenantId  String?  @map("tenant_id") @db.Uuid
+  actor     String
+  action    String
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([tenantId])
+  @@map("audit_log")
+}
