@@ -1,5 +1,5 @@
 # Local development infrastructure for the Enterprise Search platform.
-# Phase 1 brings up the two stores S4 (Tenant/Config Service) depends on.
+# Brings up Postgres, Valkey, and Elasticsearch for S4/S3/S5 local runs.
 #
 # Note (Windows/macOS, zero-cost): run with Podman Desktop, Rancher Desktop, or
 # Docker Engine on WSL2 to avoid Docker Desktop licensing. All commands below
@@ -7,10 +7,13 @@
 #
 #   docker compose -f infra/docker-compose.yml up -d
 #
-# Then, from services/tenant-config:
-#   pnpm prisma migrate dev   # create/apply schema
-#   pnpm seed                 # demo tenant + API key
-#   pnpm start:dev            # run the service against this infra
+# Tenant/Config (S4):
+#   pnpm --filter @enterprise-search/tenant-config prisma:migrate
+#   pnpm --filter @enterprise-search/tenant-config seed
+#   pnpm --filter @enterprise-search/tenant-config start:dev
+#
+# Ingestion (S5/S6) against this stack (or USE_FAKE=true with no containers):
+#   cd services/ingestion && uvicorn app.main:app --reload --port 8090
 
 name: enterprise-search
 
