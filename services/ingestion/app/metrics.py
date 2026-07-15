@@ -4,6 +4,7 @@ JOBS_CREATED = Counter("ingestion_jobs_created_total", "Jobs created.", ["type"]
 JOBS_FINISHED = Counter("ingestion_jobs_finished_total", "Jobs finished.", ["status"])
 DOCS_INDEXED = Counter("ingestion_docs_indexed_total", "Documents indexed.")
 DOCS_FAILED = Counter("ingestion_docs_failed_total", "Documents that failed indexing.")
+DOCS_ANALYZED = Counter("ingestion_docs_analyzed_total", "Documents (re)analyzed for entities.")
 PIPELINE_DURATION = Histogram(
     "ingestion_pipeline_duration_seconds",
     "Pipeline latency.",

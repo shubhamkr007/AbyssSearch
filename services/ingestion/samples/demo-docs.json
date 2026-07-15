@@ -1,0 +1,55 @@
+{
+  "tenantId": "demo",
+  "tenantPrefix": "demo",
+  "options": { "chunk": true, "enrich": true, "ensure_index": true },
+  "documents": [
+    {
+      "title": "Employee Onboarding Guide",
+      "body": "Welcome to the company. This onboarding guide walks new hires through account setup, benefits enrollment, and first-week expectations. Contact the HR team for your equipment and building access badge.",
+      "tags": ["hr", "onboarding"],
+      "source": "document",
+      "natural_key": "onboarding-guide",
+      "url": "https://intranet.demo.local/hr/onboarding"
+    },
+    {
+      "title": "Expense Reimbursement Policy",
+      "body": "Employees may submit business expenses for reimbursement within 30 days. Travel, meals, and software subscriptions require a receipt and manager approval before payment is processed by finance.",
+      "tags": ["finance", "policy"],
+      "source": "document",
+      "natural_key": "expense-policy",
+      "url": "https://intranet.demo.local/finance/expenses"
+    },
+    {
+      "title": "VPN and Remote Access Setup",
+      "body": "To work remotely, install the VPN client and authenticate with your single sign-on credentials. This security guide covers multi-factor authentication and troubleshooting common connection errors.",
+      "tags": ["it", "security"],
+      "source": "document",
+      "natural_key": "vpn-setup",
+      "url": "https://intranet.demo.local/it/vpn"
+    },
+    {
+      "title": "Q1 2026 Revenue Report",
+      "body": "ACME Corp reported strong quarterly revenue growth driven by the European market, with the Berlin office leading new enterprise contracts. Finance will publish the detailed breakdown next week.",
+      "tags": ["finance", "report"],
+      "source": "document",
+      "natural_key": "q1-2026-revenue",
+      "url": "https://intranet.demo.local/finance/q1-2026"
+    },
+    {
+      "title": "Kubernetes Deployment Runbook",
+      "body": "This engineering runbook describes how to deploy services to the production Kubernetes cluster, roll back a bad release, and read pod logs. Always run the smoke tests after a deployment.",
+      "tags": ["engineering", "devops"],
+      "source": "document",
+      "natural_key": "k8s-runbook",
+      "url": "https://intranet.demo.local/eng/k8s-runbook"
+    },
+    {
+      "title": "Company Town Hall Announcement",
+      "body": "Join the all-hands town hall this Friday. Leadership will share the product roadmap, celebrate recent wins, and answer employee questions live. A recording will be posted afterward.",
+      "tags": ["announcement"],
+      "source": "news",
+      "natural_key": "townhall-2026",
+      "url": "https://intranet.demo.local/news/townhall"
+    }
+  ]
+}

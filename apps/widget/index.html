@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>enterprise-search — dev host</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; background: #f4f5f7; }
+      header { padding: 24px; text-align: center; }
+      .stage { max-width: 1080px; margin: 0 auto; padding: 0 16px 64px; }
+      .hint { color: #6b7280; font-size: 13px; text-align: center; margin-top: 40px; }
+      code { background: #e5e7eb; padding: 1px 5px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>enterprise-search widget</h1>
+      <p class="hint">
+        Dev host. <code>api-base="demo"</code> uses the built-in fake gateway (offline).
+        Point it at <code>http://localhost:3000</code> to hit the real API Gateway.
+      </p>
+    </header>
+    <div class="stage">
+      <enterprise-search tenant-key="pk_test_demo" api-base="demo" placeholder="Search everything…">
+      </enterprise-search>
+    </div>
+    <script type="module" src="/src/dev.tsx"></script>
+  </body>
+</html>

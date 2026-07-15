@@ -21,6 +21,7 @@ DOCUMENT_MAPPINGS: dict[str, Any] = {
         "tags": {"type": "keyword"},
         "metadata": {"type": "flattened"},
         "entities": {"type": "keyword"},
+        "entities_by_type": {"type": "flattened"},
         "embedding": {
             "type": "dense_vector",
             "dims": 384,
@@ -58,6 +59,16 @@ DOCUMENT_SETTINGS: dict[str, Any] = {
 class IndexBackend(Protocol):
     def ensure_index(self, alias: str, dims: int = 384) -> None: ...
     def bulk_upsert(self, index: str, docs: list[dict[str, Any]]) -> tuple[int, int, list[str]]: ...
+    def search_documents(
+        self,
+        index: str,
+        *,
+        doc_ids: list[str] | None = None,
+        tenant_id: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]: ...
+    def update_document(self, index: str, doc_id: str, doc: dict[str, Any]) -> bool: ...
+    def ensure_analysis_fields(self, index: str) -> None: ...
     def ping(self) -> bool: ...
 
 
@@ -79,6 +90,50 @@ class FakeIndexBackend:
             self.indices.add(index)
             ids.append(doc_id)
         return len(ids), 0, ids
+
+    def search_documents(
+        self,
+        index: str,
+        *,
+        doc_ids: list[str] | None = None,
+        tenant_id: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        wanted = set(doc_ids) if doc_ids else None
+        prefix = index[:-1] if index.endswith("*") else None
+        out: list[dict[str, Any]] = []
+        for doc_id, body in self.docs.items():
+            idx = str(body.get("_index", ""))
+            if prefix is not None:
+                if not idx.startswith(prefix):
+                    continue
+            elif idx != index:
+                continue
+            if tenant_id and body.get("tenant_id") != tenant_id:
+                continue
+            if wanted is not None and doc_id not in wanted:
+                continue
+            out.append(
+                {
+                    "id": doc_id,
+                    "index": idx,
+                    "body": body.get("body") or body.get("content_all") or "",
+                    "source": body.get("source"),
+                    "title": body.get("title"),
+                }
+            )
+            if len(out) >= limit:
+                break
+        return out
+
+    def update_document(self, index: str, doc_id: str, doc: dict[str, Any]) -> bool:
+        if doc_id in self.docs:
+            self.docs[doc_id].update(doc)
+            return True
+        return False
+
+    def ensure_analysis_fields(self, index: str) -> None:
+        return None
 
     def ping(self) -> bool:
         return True
@@ -129,6 +184,9 @@ class EsIndexBackend:
         except Exception:
             pass
 
+        # Guarantee typed-entity fields exist even on pre-existing indices.
+        self.ensure_analysis_fields(physical)
+
     def bulk_upsert(self, index: str, docs: list[dict[str, Any]]) -> tuple[int, int, list[str]]:
         if not docs:
             return 0, 0, []
@@ -152,6 +210,70 @@ class EsIndexBackend:
                     failed += 1
         ok = len(ids) - failed
         return ok, failed, ids
+
+    def search_documents(
+        self,
+        index: str,
+        *,
+        doc_ids: list[str] | None = None,
+        tenant_id: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        filters: list[dict[str, Any]] = []
+        if tenant_id:
+            filters.append({"term": {"tenant_id": tenant_id}})
+        if doc_ids:
+            query: dict[str, Any] = {
+                "bool": {"filter": filters, "must": [{"ids": {"values": list(doc_ids)}}]}
+            }
+        elif filters:
+            query = {"bool": {"filter": filters}}
+        else:
+            query = {"match_all": {}}
+        try:
+            resp = self.client.search(
+                index=index,
+                query=query,
+                size=min(limit, 10000),
+                source_includes=["body", "content_all", "source", "title", "tenant_id"],
+                ignore_unavailable=True,
+                allow_no_indices=True,
+            )
+        except Exception:
+            return []
+        out: list[dict[str, Any]] = []
+        for hit in resp.get("hits", {}).get("hits", []):
+            src = hit.get("_source", {}) or {}
+            out.append(
+                {
+                    "id": hit.get("_id"),
+                    "index": hit.get("_index"),
+                    "body": src.get("body") or src.get("content_all") or "",
+                    "source": src.get("source"),
+                    "title": src.get("title"),
+                }
+            )
+        return out
+
+    def update_document(self, index: str, doc_id: str, doc: dict[str, Any]) -> bool:
+        try:
+            self.client.update(index=index, id=doc_id, doc=doc, refresh=True)
+            return True
+        except Exception:
+            return False
+
+    def ensure_analysis_fields(self, index: str) -> None:
+        """Additively ensure entities/entities_by_type mappings exist (flattened)."""
+        try:
+            self.client.indices.put_mapping(
+                index=index,
+                properties={
+                    "entities": {"type": "keyword"},
+                    "entities_by_type": {"type": "flattened"},
+                },
+            )
+        except Exception:
+            pass
 
     def ping(self) -> bool:
         try:

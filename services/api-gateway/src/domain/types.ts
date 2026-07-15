@@ -43,6 +43,8 @@ export interface S3SearchResult {
   tags?: string[];
   highlights?: Record<string, string[]>;
   metadata?: JsonObject;
+  entities?: string[];
+  entitiesByType?: Record<string, string[]>;
 }
 
 export interface S3SearchResponse {
@@ -75,6 +77,8 @@ export interface WidgetSearchResult {
   tags?: string[];
   score: number;
   source?: string;
+  entities?: string[];
+  entitiesByType?: Record<string, string[]>;
 }
 
 export interface WidgetSearchResponse {

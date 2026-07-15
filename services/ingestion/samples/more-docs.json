@@ -1,0 +1,118 @@
+{
+  "tenantId": "demo",
+  "tenantPrefix": "demo",
+  "options": { "chunk": true, "enrich": true, "ensure_index": true },
+  "documents": [
+    {
+      "title": "Data Retention and Privacy Policy",
+      "body": "This policy defines how long customer data is stored and when it is deleted. Personal data is retained for 24 months, after which it is anonymized. All access to sensitive records is logged for compliance and security audits.",
+      "tags": ["legal", "policy", "security"],
+      "source": "document",
+      "natural_key": "data-retention-policy",
+      "url": "https://intranet.demo.local/legal/data-retention",
+      "metadata": { "department": "Legal", "year": 2026, "owner": "Compliance" }
+    },
+    {
+      "title": "Incident Response Playbook",
+      "body": "When a production incident is detected, the on-call engineer declares severity, opens a bridge, and notifies stakeholders. This playbook covers triage, mitigation, rollback, and the post-incident review process for security and reliability events.",
+      "tags": ["security", "it", "devops"],
+      "source": "document",
+      "natural_key": "incident-response",
+      "url": "https://intranet.demo.local/it/incident-response",
+      "metadata": { "department": "Engineering", "year": 2026 }
+    },
+    {
+      "title": "Phishing Awareness Training",
+      "body": "Employees must complete phishing awareness training every quarter. Learn how to spot suspicious emails, verify sender addresses, avoid malicious links, and report phishing attempts to the security team immediately.",
+      "tags": ["security", "hr", "training"],
+      "source": "document",
+      "natural_key": "phishing-training",
+      "url": "https://intranet.demo.local/security/phishing",
+      "metadata": { "department": "Security", "year": 2026 }
+    },
+    {
+      "title": "Cloud Cost Optimization Guide",
+      "body": "Reduce your cloud bill by rightsizing instances, using spot capacity for batch jobs, deleting idle volumes, and setting budget alerts. This guide includes finance approval thresholds and tagging conventions for cost allocation.",
+      "tags": ["finance", "engineering", "cloud"],
+      "source": "document",
+      "natural_key": "cloud-cost",
+      "url": "https://intranet.demo.local/eng/cloud-cost",
+      "metadata": { "department": "Engineering", "year": 2026 }
+    },
+    {
+      "title": "Sales Territory Plan 2026",
+      "body": "The 2026 sales territory plan assigns accounts by region and industry. It outlines quota targets, named enterprise accounts, and the handoff process between sales development and account executives.",
+      "tags": ["sales", "planning"],
+      "source": "document",
+      "natural_key": "sales-territory-2026",
+      "url": "https://intranet.demo.local/sales/territory-2026",
+      "metadata": { "department": "Sales", "year": 2026 }
+    },
+    {
+      "title": "Product Roadmap H2 2026",
+      "body": "Our second-half roadmap prioritizes hybrid search, a redesigned dashboard, and single sign-on. Each initiative lists the target release, product owner, and the customer problem it solves.",
+      "tags": ["product", "roadmap"],
+      "source": "document",
+      "natural_key": "product-roadmap-h2",
+      "url": "https://intranet.demo.local/product/roadmap-h2",
+      "metadata": { "department": "Product", "year": 2026 }
+    },
+    {
+      "title": "Customer Support SLA",
+      "body": "Support tickets are triaged by priority. Critical issues get a one-hour response and a four-hour resolution target. This document explains severity levels, escalation paths, and weekend on-call coverage.",
+      "tags": ["support", "policy"],
+      "source": "document",
+      "natural_key": "support-sla",
+      "url": "https://intranet.demo.local/support/sla",
+      "metadata": { "department": "Support", "year": 2026 }
+    },
+    {
+      "title": "Marketing Brand Guidelines",
+      "body": "Brand guidelines cover logo usage, color palette, typography, and tone of voice. Always use the approved logo files and maintain clear space around the mark in all marketing materials.",
+      "tags": ["marketing", "design"],
+      "source": "document",
+      "natural_key": "brand-guidelines",
+      "url": "https://intranet.demo.local/marketing/brand",
+      "metadata": { "department": "Marketing", "year": 2026 }
+    },
+    {
+      "title": "Invoice Processing Workflow",
+      "body": "Vendor invoices are received, matched against purchase orders, approved by the budget owner, and paid within net-30 terms. This finance workflow describes exceptions handling and month-end close procedures.",
+      "tags": ["finance", "operations"],
+      "source": "document",
+      "natural_key": "invoice-workflow",
+      "url": "https://intranet.demo.local/finance/invoices",
+      "metadata": { "department": "Finance", "year": 2026 }
+    },
+    {
+      "title": "Docker and Kubernetes Best Practices",
+      "body": "Build small container images, run as a non-root user, set resource requests and limits, and use liveness and readiness probes. This engineering guide covers Kubernetes deployments, rollouts, and horizontal pod autoscaling.",
+      "tags": ["engineering", "devops", "cloud"],
+      "source": "document",
+      "natural_key": "docker-k8s-bestpractices",
+      "url": "https://intranet.demo.local/eng/docker-k8s",
+      "metadata": { "department": "Engineering", "year": 2026 }
+    },
+    {
+      "title": "New Office Opening in Austin",
+      "body": "We are excited to announce a new office in Austin, Texas, opening next month. The space will host our growing sales and support teams and includes collaboration areas and a customer briefing center.",
+      "tags": ["announcement", "company"],
+      "source": "news",
+      "natural_key": "austin-office",
+      "url": "https://intranet.demo.local/news/austin-office",
+      "metadata": { "department": "Company", "year": 2026 }
+    },
+    {
+      "title": "Quarterly Security Audit Results",
+      "body": "The Q2 security audit found no critical vulnerabilities. Two medium findings related to log retention and password rotation were remediated. Full results are available to the security and compliance teams.",
+      "tags": ["security", "news"],
+      "source": "news",
+      "natural_key": "security-audit-q2",
+      "url": "https://intranet.demo.local/news/security-audit-q2",
+      "metadata": { "department": "Security", "year": 2026 }
+    }
+  ]
+}
+
+
+

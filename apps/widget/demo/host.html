@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>enterprise-search — plain HTML host</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; background: #f4f5f7; color: #1f2328; }
+      .wrap { max-width: 820px; margin: 0 auto; padding: 32px 16px 64px; }
+      h1 { text-align: center; }
+      section { margin-top: 40px; }
+      h2 { font-size: 15px; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }
+      #log {
+        margin-top: 32px; background: #0b1020; color: #cbd5e1; border-radius: 10px;
+        padding: 14px 16px; font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace;
+        max-height: 220px; overflow: auto;
+      }
+      #log div { white-space: pre-wrap; }
+      code { background: #e5e7eb; padding: 1px 5px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>enterprise-search — plain HTML host</h1>
+      <p>
+        This page loads the built bundle from <code>../dist/enterprise-search.js</code>.
+        Run <code>pnpm --filter @enterprise-search/widget build</code> first.
+        Both widgets use <code>api-base="demo"</code> (offline fake gateway).
+      </p>
+
+      <section>
+        <h2>Default theme</h2>
+        <enterprise-search tenant-key="pk_test_demo" api-base="demo" placeholder="Search everything…">
+        </enterprise-search>
+      </section>
+
+      <section>
+        <h2>Custom theme + tab override</h2>
+        <enterprise-search
+          id="themed"
+          tenant-key="pk_test_demo"
+          api-base="demo"
+          placeholder="Search Acme…"
+          theme='{"primary":"#7c3aed","accent":"#f3e8ff","radius":"8px"}'
+          tabs='[{"key":"all","label":"Everything"},{"key":"documents","label":"Docs"},{"key":"news","label":"News"}]'>
+        </enterprise-search>
+      </section>
+
+      <h2>Events</h2>
+      <div id="log"><div>listening for search / suggestselect / tabchange / resultclick…</div></div>
+    </div>
+
+    <script type="module" src="../dist/enterprise-search.js"></script>
+    <script>
+      const log = document.getElementById('log');
+      const line = (msg) => {
+        const el = document.createElement('div');
+        el.textContent = `${new Date().toLocaleTimeString()}  ${msg}`;
+        log.appendChild(el);
+        log.scrollTop = log.scrollHeight;
+      };
+      for (const type of ['search', 'suggestselect', 'tabchange', 'resultclick', 'feedback']) {
+        document.addEventListener(type, (e) => line(`${type}  ${JSON.stringify(e.detail)}`));
+      }
+    </script>
+  </body>
+</html>

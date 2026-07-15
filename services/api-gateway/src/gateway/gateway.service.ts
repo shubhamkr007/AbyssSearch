@@ -86,6 +86,8 @@ export class GatewayService {
         tags: r.tags,
         score: r.score,
         source: r.source,
+        entities: r.entities,
+        entitiesByType: r.entitiesByType,
       })),
       facets: resp.facets,
     };

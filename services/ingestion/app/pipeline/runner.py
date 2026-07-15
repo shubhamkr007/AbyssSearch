@@ -7,6 +7,7 @@ from typing import Any
 
 from app.clients.enrich import EmbedClient, NerClient
 from app.clients.indexer import IndexBackend, resolve_alias
+from app.pipeline.entities import group_entities
 from app.pipeline.ids import document_id
 from app.pipeline.normalize import chunk_text
 from app.schemas import InlineDocument
@@ -49,6 +50,7 @@ def build_canonical_docs(
                     "tags": list(doc.tags or []),
                     "metadata": dict(doc.metadata or {}),
                     "entities": [],
+                    "entities_by_type": {},
                     "embedding": None,
                     "created_at": now,
                     "parent_id": parent_id,
@@ -70,14 +72,15 @@ def enrich_docs(
 
     bodies = [str(d.get("body") or "") for d in docs]
     vectors = embed.embed_passages(bodies)
-    entities = ner.extract(bodies)
+    detailed = ner.extract_detailed(bodies)
 
     for i, doc in enumerate(docs):
         if vectors and i < len(vectors) and vectors[i]:
             doc["embedding"] = vectors[i]
-        if entities and i < len(entities) and entities[i]:
-            # Deduplicate entity strings.
-            doc["entities"] = sorted(set(entities[i]))
+        if detailed and i < len(detailed) and detailed[i]:
+            flat, by_type = group_entities(detailed[i])
+            doc["entities"] = flat
+            doc["entities_by_type"] = by_type
     return docs
 
 

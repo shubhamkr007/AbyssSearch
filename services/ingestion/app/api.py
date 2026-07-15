@@ -1,9 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.auth import require_admin
-from app.metrics import DOCS_FAILED, DOCS_INDEXED, JOBS_CREATED, JOBS_FINISHED
+from app.metrics import (
+    DOCS_ANALYZED,
+    DOCS_FAILED,
+    DOCS_INDEXED,
+    JOBS_CREATED,
+    JOBS_FINISHED,
+)
 from app.orchestrator import Orchestrator
 from app.schemas import (
+    AnalyzeJobRequest,
     BulkDocumentsRequest,
     BulkIndexResponse,
     DeadLetterView,
@@ -35,6 +42,27 @@ def create_ingest_job(
         JOBS_FINISHED.labels(status=job.status).inc()
         DOCS_INDEXED.inc(job.counts.ok)
         DOCS_FAILED.inc(job.counts.failed)
+    return result
+
+
+@router.post(
+    "/jobs/analyze",
+    response_model=JobCreatedResponse,
+    dependencies=[Depends(require_admin)],
+)
+def create_analyze_job(
+    body: AnalyzeJobRequest,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> JobCreatedResponse:
+    try:
+        result = orch.start_analyze(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    JOBS_CREATED.labels(type="analyze").inc()
+    job = orch.get_job(result.job_id)
+    if job and job.status in ("succeeded", "partial", "failed"):
+        JOBS_FINISHED.labels(status=job.status).inc()
+        DOCS_ANALYZED.inc(job.counts.ok)
     return result
 
 

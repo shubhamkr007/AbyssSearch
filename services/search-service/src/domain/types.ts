@@ -45,6 +45,10 @@ export interface SearchResultItem {
   tags?: string[];
   highlights?: Record<string, string[]>;
   metadata?: JsonObject;
+  /** Flat, de-duplicated entity texts (from the NER analyze job). */
+  entities?: string[];
+  /** Entities grouped by label, e.g. { ORG: ["ACME Corp"], GPE: ["Berlin"] }. */
+  entitiesByType?: Record<string, string[]>;
 }
 
 export interface SearchResponse {

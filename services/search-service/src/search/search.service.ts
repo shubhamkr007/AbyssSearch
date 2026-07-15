@@ -286,8 +286,25 @@ export class SearchService {
       snippet,
       highlights,
       metadata: (s.metadata as JsonObject | undefined) ?? undefined,
+      entities: Array.isArray(s.entities) ? (s.entities as string[]) : undefined,
+      entitiesByType: toEntitiesByType(s.entities_by_type),
     };
   }
+}
+
+/** Coerce the ES `entities_by_type` (flattened) source into a clean {label: string[]} map. */
+function toEntitiesByType(value: unknown): Record<string, string[]> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const out: Record<string, string[]> = {};
+  for (const [label, raw] of Object.entries(value as Record<string, unknown>)) {
+    const arr = Array.isArray(raw) ? raw : [raw];
+    const clean = arr
+      .filter((v) => v !== null && v !== undefined)
+      .map((v) => String(v))
+      .filter((v) => v.length > 0);
+    if (clean.length > 0) out[label] = clean;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 interface RetrievalOutcome {

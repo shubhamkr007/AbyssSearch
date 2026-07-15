@@ -8,9 +8,11 @@ from app.clients.enrich import EmbedClient, NerClient
 from app.clients.indexer import IndexBackend
 from app.config import Settings
 from app.domain import DeadLetterRecord, JobRecord, TaskRecord, new_id, utcnow
+from app.pipeline.entities import group_entities
 from app.pipeline.runner import run_pipeline
 from app.repository import JobRepository
 from app.schemas import (
+    AnalyzeJobRequest,
     BulkDocumentsRequest,
     BulkIndexResponse,
     DeadLetterView,
@@ -25,6 +27,9 @@ from app.schemas import (
     TaskStatus,
     TaskView,
 )
+
+# NER services cap batch size (analysis-ml default max is 32); stay well under.
+_ANALYZE_NER_BATCH = 25
 
 
 class Orchestrator:
@@ -88,6 +93,47 @@ class Orchestrator:
             jobId=refreshed.id,
             status=refreshed.status,
             taskCount=len(tasks),
+        )
+
+    def start_analyze(self, req: AnalyzeJobRequest) -> JobCreatedResponse:
+        """Create an ANALYZE job that (re)generates typed entities for indexed docs."""
+        prefix = req.tenant_prefix or req.tenant_id
+        job = JobRecord(
+            id=new_id("job_"),
+            tenant_id=req.tenant_id,
+            tenant_prefix=prefix,
+            source_id=req.source,
+            type=JobType.ANALYZE.value,
+            status=JobStatus.QUEUED.value,
+            counts={"total": 0, "ok": 0, "failed": 0, "skipped": 0},
+            options={"types": req.types, "limit": req.limit},
+            payload={"source": req.source, "doc_ids": list(req.doc_ids)},
+        )
+        self.repo.create_job(job)
+
+        task = TaskRecord(
+            id=new_id("task_"),
+            job_id=job.id,
+            kind=TaskKind.ANALYZE.value,
+            status=TaskStatus.QUEUED.value,
+            payload={
+                "source": req.source,
+                "doc_ids": list(req.doc_ids),
+                "types": req.types,
+                "limit": req.limit,
+            },
+        )
+        self.repo.create_task(task)
+
+        # Analyze runs inline for the MVP (the Celery worker only routes pipeline tasks).
+        self.run_analyze_task(job.id, task.id)
+
+        refreshed = self.repo.get_job(job.id)
+        assert refreshed is not None
+        return JobCreatedResponse(
+            jobId=refreshed.id,
+            status=refreshed.status,
+            taskCount=1,
         )
 
     def bulk_upsert(self, req: BulkDocumentsRequest) -> BulkIndexResponse:
@@ -216,6 +262,99 @@ class Orchestrator:
 
         self._finalize_job(job_id)
 
+    def run_analyze_task(self, job_id: str, task_id: str) -> None:
+        """Fetch indexed docs, run NER, and write typed entities back to ES."""
+        job = self.repo.get_job(job_id)
+        task = self.repo.get_task(task_id)
+        if not job or not task:
+            return
+
+        task.status = TaskStatus.RUNNING.value
+        task.attempts += 1
+        task.updated_at = utcnow()
+        self.repo.update_task(task)
+
+        job.status = JobStatus.RUNNING.value
+        self.repo.update_job(job)
+
+        try:
+            source = task.payload.get("source")
+            doc_ids = list(task.payload.get("doc_ids") or [])
+            types = task.payload.get("types")
+            limit = int(task.payload.get("limit") or 1000)
+            index = f"{job.tenant_prefix}-{source}" if source else f"{job.tenant_prefix}-*"
+
+            targets = self.indexer.search_documents(
+                index,
+                doc_ids=doc_ids or None,
+                tenant_id=job.tenant_id,
+                limit=limit,
+            )
+            total = len(targets)
+
+            # Ensure the typed-entity field is mapped on every index we touch.
+            for concrete in {t["index"] for t in targets if t.get("index")}:
+                self.indexer.ensure_analysis_fields(concrete)
+
+            # Guard: only analyze docs whose content is actually loaded.
+            to_process = [t for t in targets if str(t.get("body") or "").strip()]
+            skipped = total - len(to_process)
+
+            ok = 0
+            failed = 0
+            for batch in _chunk(to_process, _ANALYZE_NER_BATCH):
+                detailed = self.ner.extract_detailed([t["body"] for t in batch])
+                if detailed is None:
+                    # NER backend unavailable — surface as failures, not silent success.
+                    failed += len(batch)
+                    continue
+                for target, spans in zip(batch, detailed):
+                    flat, by_type = group_entities(spans or [], types)
+                    updated = self.indexer.update_document(
+                        target["index"],
+                        target["id"],
+                        {"entities": flat, "entities_by_type": by_type},
+                    )
+                    if updated:
+                        ok += 1
+                    else:
+                        failed += 1
+
+            if total == 0 or ok > 0:
+                task.status = TaskStatus.SUCCEEDED.value
+                task.error = None if failed == 0 else f"{failed} document(s) failed to update"
+            else:
+                task.status = TaskStatus.FAILED.value
+                task.error = "no documents updated (NER backend or ES update failed)"
+            task.payload = {
+                **task.payload,
+                "result": {"total": total, "ok": ok, "failed": failed, "skipped": skipped},
+            }
+            task.updated_at = utcnow()
+            self.repo.update_task(task)
+
+            job.counts = {"total": total, "ok": ok, "failed": failed, "skipped": skipped}
+            self.repo.update_job(job)
+        except Exception as exc:  # noqa: BLE001 - convert to dead-letter
+            task.status = TaskStatus.FAILED.value
+            task.error = str(exc)
+            task.updated_at = utcnow()
+            self.repo.update_task(task)
+            self.repo.add_dead_letter(
+                DeadLetterRecord(
+                    id=new_id("dl_"),
+                    task_id=task.id,
+                    payload={
+                        "tenant_id": job.tenant_id,
+                        "tenant_prefix": job.tenant_prefix,
+                        "analyze": task.payload,
+                    },
+                    error=str(exc),
+                )
+            )
+
+        self._finalize_job(job_id)
+
     def _run_job_inline(self, job_id: str) -> None:
         for task in self.repo.list_tasks(job_id):
             self.run_task(job_id, task.id)
@@ -241,6 +380,11 @@ class Orchestrator:
 
 
 def _batch(items: list[InlineDocument], size: int) -> list[list[InlineDocument]]:
+    size = max(1, size)
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _chunk(items: list[Any], size: int) -> list[list[Any]]:
     size = max(1, size)
     return [items[i : i + size] for i in range(0, len(items), size)]
 

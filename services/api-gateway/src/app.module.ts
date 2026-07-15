@@ -80,7 +80,7 @@ function seededFakeSearch(): SearchClient {
   return client;
 }
 
-const configProvider: Provider = env.useFake
+const configProvider: Provider = env.useFakeConfig
   ? { provide: CONFIG_CLIENT, useFactory: seededFakeConfig }
   : {
       provide: CONFIG_CLIENT,
@@ -93,7 +93,7 @@ const configProvider: Provider = env.useFake
       inject: [APP_ENV],
     };
 
-const searchProvider: Provider = env.useFake
+const searchProvider: Provider = env.useFakeSearch
   ? { provide: SEARCH_CLIENT, useFactory: seededFakeSearch }
   : {
       provide: SEARCH_CLIENT,

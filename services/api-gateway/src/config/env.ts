@@ -18,6 +18,10 @@ export interface AppEnv {
 
   /** Dev/test: use in-memory fake downstream clients (no Config/Search needed). */
   useFake: boolean;
+  /** Fake only the Config/keys client (default: useFake). Lets you run real search with seeded config. */
+  useFakeConfig: boolean;
+  /** Fake only the Search client (default: useFake). */
+  useFakeSearch: boolean;
 }
 
 function num(value: string | undefined, fallback: number): number {
@@ -31,6 +35,7 @@ function bool(value: string | undefined, fallback: boolean): boolean {
 }
 
 export function loadEnv(): AppEnv {
+  const useFake = bool(process.env.USE_FAKE, false);
   return {
     port: num(process.env.PORT, 3000),
     configServiceUrl: process.env.CONFIG_SERVICE_URL ?? 'http://localhost:8000',
@@ -47,6 +52,8 @@ export function loadEnv(): AppEnv {
     logLevel: process.env.LOG_LEVEL ?? 'info',
     ragEnabled: bool(process.env.RAG_ENABLED, false),
 
-    useFake: bool(process.env.USE_FAKE, false),
+    useFake,
+    useFakeConfig: bool(process.env.USE_FAKE_CONFIG, useFake),
+    useFakeSearch: bool(process.env.USE_FAKE_SEARCH, useFake),
   };
 }
