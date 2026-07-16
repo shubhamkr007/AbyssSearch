@@ -35,6 +35,20 @@ describe('SearchService.search', () => {
     expect(res.results.map((r) => r.id)).toEqual(['b', 'a', 'c']);
     expect(res.results.find((r) => r.id === 'a')?.snippet).toBe('alpha body text');
     expect(res.facets.tags).toEqual([{ value: 'x', count: 2 }]);
+    // Total is the fused union of both legs (a, b, c) - not just the BM25 count.
+    expect(res.total).toBe(3);
+  });
+
+  it('reports a non-zero total for a pure-semantic match (BM25 empty, kNN hits)', async () => {
+    const { backend, service } = build();
+    // No keyword matches, but the vector leg finds two docs.
+    backend.bm25 = { total: 0, hits: [], facets: {} };
+    backend.knn = { total: 2, hits: [hit('a', { title: 'Alpha' }), hit('b', { title: 'Bravo' })] };
+
+    const res = await service.search({ tenant: 'acme', q: 'unrelated words' });
+
+    expect(res.degraded).toBe(false);
+    expect(res.results.map((r) => r.id)).toEqual(['a', 'b']);
     expect(res.total).toBe(2);
   });
 

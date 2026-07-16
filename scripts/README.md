@@ -20,11 +20,18 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1
 # Start with embeddings too (hybrid BM25 + kNN search)
 powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings
 
+# Start with real S4 tenant/config (in-memory) instead of the seeded fake config
+powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig
+
 # Force a rebuild of the Node services first
 powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Build
 
-# Check health of ES + all four services
+# Check health of ES + all services
 powershell -ExecutionPolicy Bypass -File scripts\dev-status.ps1
+
+# Provision two tenants and verify hybrid search + tenant isolation
+# (requires a stack started with -Embeddings -RealConfig)
+powershell -ExecutionPolicy Bypass -File scripts\verify-gaps.ps1
 
 # Stop everything and close the windows
 powershell -ExecutionPolicy Bypass -File scripts\dev-down.ps1
@@ -35,10 +42,32 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-down.ps1
 | Service | Port | Notes |
 |---|---|---|
 | analysis-ml (embedding + NER) | 8000 | `/docs` for Swagger UI |
+| tenant-config S4 (`-RealConfig`) | 8001 | in-memory store; admin token `dev-admin-token` |
 | search-service | 8080 | tenant-scoped hybrid retrieval |
 | api-gateway (BFF) | 8081 | **point the widget's `api-base` here** |
 | ingestion (orchestrator) | 8090 | `/docs`; `ANALYZE` + ingest jobs |
 | elasticsearch | 9200 | run natively (not managed by these scripts) |
+
+## Modes
+
+- **`-Embeddings`** loads the `bge-small-en-v1.5` model in analysis-ml so search is
+  hybrid (BM25 + kNN + client-side RRF). Without it, the embedder is off and search
+  degrades to BM25-only (still fully functional; NER `/jobs/analyze` still works).
+- **`-RealConfig`** starts the real S4 tenant/config service on :8001 with an
+  **in-memory** store (no Postgres needed) and points the gateway at it, so the
+  gateway performs real API-key auth + per-tenant config. In-memory state is lost on
+  restart; `verify-gaps.ps1` provisions tenants/keys via the S4 admin API each run.
+  To persist across restarts, run Postgres (Docker/Podman or native) and start S4
+  with `USE_IN_MEMORY=false` + a `DATABASE_URL` (see `services/tenant-config/.env.example`).
+
+## verify-gaps.ps1
+
+Provisions two tenants (`acme`, `globex`) with real keys, ingests per-tenant docs
+(with embeddings + NER), then asserts:
+
+- **Hybrid** - a keyword-free semantic query (`"spacecraft blastoff timetable"`)
+  returns the rocket doc via kNN and the response is not degraded.
+- **Isolation** - a key for one tenant never returns another tenant's documents.
 
 ## Notes
 

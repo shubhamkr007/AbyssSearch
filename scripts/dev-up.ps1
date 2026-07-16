@@ -5,6 +5,7 @@
 
   Services & ports:
     analysis-ml (embedding + NER) : 8000
+    tenant-config S4 (-RealConfig): 8001   (in-memory store; no Postgres needed)
     search-service                : 8080
     api-gateway (BFF)             : 8081   <- point the widget's api-base here
     ingestion (orchestrator)      : 8090
@@ -16,21 +17,30 @@
   Default is NER-only (BACKEND=none); search then runs BM25-only, which is the
   known-good low-resource mode.
 
+.PARAMETER RealConfig
+  Start the real S4 tenant/config service (in-memory store) on :8001 and point the
+  gateway at it (real API-key auth + per-tenant config) instead of the seeded fake
+  config. In-memory state is not persisted across restarts; provision tenants/keys
+  via the S4 admin API (see scripts\verify-gaps.ps1).
+
 .PARAMETER Build
-  Force a rebuild of the Node services (search + gateway) before starting.
+  Force a rebuild of the Node services before starting.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings
+  powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig
 #>
 param(
   [switch]$Embeddings,
+  [switch]$RealConfig,
   [switch]$Build
 )
 
 $ErrorActionPreference = 'Stop'
 $root      = Split-Path -Parent $PSScriptRoot
 $analysis  = Join-Path $root 'services\analysis-ml'
+$tconf     = Join-Path $root 'services\tenant-config'
 $search    = Join-Path $root 'services\search-service'
 $gateway   = Join-Path $root 'services\api-gateway'
 $ingest    = Join-Path $root 'services\ingestion'
@@ -64,11 +74,13 @@ if (Test-Http 'http://localhost:9200') {
 
 # --- Build Node services if needed ---
 $nodeReady = (Test-Path (Join-Path $search 'dist\main.js')) -and (Test-Path (Join-Path $gateway 'dist\main.js'))
+if ($RealConfig) { $nodeReady = $nodeReady -and (Test-Path (Join-Path $tconf 'dist\main.js')) }
 if ($Build -or -not $nodeReady) {
-  Write-Host 'Building Node services (search + gateway)...' -ForegroundColor Cyan
+  Write-Host 'Building Node services...' -ForegroundColor Cyan
   try {
     pnpm --filter @enterprise-search/search-service build
     pnpm --filter @enterprise-search/api-gateway build
+    if ($RealConfig) { pnpm --filter @enterprise-search/tenant-config build }
   } catch {
     Write-Host "Build failed: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host 'Fix the build, or run once manually with pnpm, then retry.' -ForegroundColor Yellow
@@ -88,13 +100,29 @@ $pids += Start-Svc -Title 'es-analysis-ml' -WorkDir $analysis -EnvVars @{
   PORT = '8000'; BACKEND = $backend; WARM_UP = $warm; SPACY_MODEL = 'en_core_web_sm'; LOG_LEVEL = 'INFO'
 } -RunCmd "& '.\.venv\Scripts\python.exe' -m uvicorn app.main:app --port 8000"
 
+if ($RealConfig) {
+  Write-Host 'config        : real S4 on :8001 (in-memory store).' -ForegroundColor DarkGray
+  $pids += Start-Svc -Title 'es-tenant-config' -WorkDir $tconf -EnvVars @{
+    PORT = '8001'; USE_IN_MEMORY = 'true'; ADMIN_TOKEN = 'dev-admin-token'; REDIS_URL = ''; LOG_LEVEL = 'info'
+  } -RunCmd 'node dist\main.js'
+} else {
+  Write-Host 'config        : seeded fake config (pass -RealConfig for real S4).' -ForegroundColor DarkGray
+}
+
 $pids += Start-Svc -Title 'es-search' -WorkDir $search -EnvVars @{
   PORT = '8080'; USE_FAKE = 'false'; ELASTICSEARCH_URL = 'http://localhost:9200'; EMBEDDING_SERVICE_URL = 'http://localhost:8000'; LOG_LEVEL = 'info'
 } -RunCmd 'node dist\main.js'
 
-$pids += Start-Svc -Title 'es-gateway' -WorkDir $gateway -EnvVars @{
-  PORT = '8081'; USE_FAKE_CONFIG = 'true'; USE_FAKE_SEARCH = 'false'; SEARCH_SERVICE_URL = 'http://localhost:8080'; RAG_ENABLED = 'false'; LOG_LEVEL = 'info'
-} -RunCmd 'node dist\main.js'
+$gatewayEnv = @{
+  PORT = '8081'; USE_FAKE_SEARCH = 'false'; SEARCH_SERVICE_URL = 'http://localhost:8080'; RAG_ENABLED = 'false'; LOG_LEVEL = 'info'
+}
+if ($RealConfig) {
+  $gatewayEnv['USE_FAKE_CONFIG'] = 'false'
+  $gatewayEnv['CONFIG_SERVICE_URL'] = 'http://localhost:8001'
+} else {
+  $gatewayEnv['USE_FAKE_CONFIG'] = 'true'
+}
+$pids += Start-Svc -Title 'es-gateway' -WorkDir $gateway -EnvVars $gatewayEnv -RunCmd 'node dist\main.js'
 
 $pids += Start-Svc -Title 'es-ingestion' -WorkDir $ingest -EnvVars @{
   PORT = '8090'; USE_FAKE = 'false'; USE_INLINE = 'true'; ELASTICSEARCH_URL = 'http://localhost:9200'; NER_SERVICE_URL = 'http://localhost:8000'; EMBEDDING_SERVICE_URL = 'http://localhost:8000'; ADMIN_TOKEN = 'dev-admin-token'; DATABASE_URL = 'sqlite+pysqlite:///./ingestion.db'; LOG_LEVEL = 'info'
@@ -106,7 +134,12 @@ $pids | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
 
 # --- Wait for health ---
 $targets = @(
-  @{ Name = 'analysis-ml'; Url = 'http://localhost:8000/healthz'; Timeout = 60 },
+  @{ Name = 'analysis-ml'; Url = 'http://localhost:8000/healthz'; Timeout = 90 }
+)
+if ($RealConfig) {
+  $targets += @{ Name = 'tenant-config'; Url = 'http://localhost:8001/healthz'; Timeout = 30 }
+}
+$targets += @(
   @{ Name = 'search';      Url = 'http://localhost:8080/healthz'; Timeout = 30 },
   @{ Name = 'gateway';     Url = 'http://localhost:8081/healthz'; Timeout = 30 },
   @{ Name = 'ingestion';   Url = 'http://localhost:8090/healthz'; Timeout = 30 }
@@ -126,12 +159,18 @@ foreach ($t in $targets) {
 Write-Host ''
 Write-Host 'Stack up. Endpoints:' -ForegroundColor Green
 Write-Host '  analysis-ml : http://localhost:8000/docs'
+if ($RealConfig) { Write-Host '  tenant-cfg  : http://localhost:8001        (real S4, admin token = dev-admin-token)' }
 Write-Host '  search      : http://localhost:8080/healthz'
 Write-Host '  gateway     : http://localhost:8081        (widget api-base)'
 Write-Host '  ingestion   : http://localhost:8090/docs'
 Write-Host ''
-Write-Host 'Demo search through the gateway (tenant key = pk_test_demo):' -ForegroundColor Cyan
-Write-Host '  curl -X POST http://localhost:8081/v1/search -H "Authorization: Bearer pk_test_demo" -H "Content-Type: application/json" -d "{\"query\":\"security\"}"'
+if ($RealConfig) {
+  Write-Host 'Real config is empty on start. Provision tenants + keys and verify hybrid/isolation:' -ForegroundColor Cyan
+  Write-Host '  powershell -ExecutionPolicy Bypass -File scripts\verify-gaps.ps1'
+} else {
+  Write-Host 'Demo search through the gateway (tenant key = pk_test_demo):' -ForegroundColor Cyan
+  Write-Host '  curl -X POST http://localhost:8081/v1/search -H "Authorization: Bearer pk_test_demo" -H "Content-Type: application/json" -d "{\"query\":\"security\"}"'
+}
 Write-Host ''
 Write-Host 'Status:  powershell -ExecutionPolicy Bypass -File scripts\dev-status.ps1'
 Write-Host 'Stop:    powershell -ExecutionPolicy Bypass -File scripts\dev-down.ps1'

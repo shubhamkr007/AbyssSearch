@@ -9,7 +9,7 @@
 param()
 
 $ErrorActionPreference = 'SilentlyContinue'
-$ports = 8000, 8080, 8081, 8090
+$ports = 8000, 8001, 8080, 8081, 8090
 $stopped = $false
 
 Write-Host '=== Enterprise Search - dev down ===' -ForegroundColor Green

@@ -209,7 +209,9 @@ export class SearchService {
       .filter((x): x is SearchResultItem => x !== null);
 
     const hybridMode: HybridModeUsed = bm25 && knn ? 'client_rrf' : bm25 ? 'bm25_only' : 'client_rrf';
-    const total = bm25?.total ?? knn?.hits.length ?? 0;
+    // Hybrid total = union of both legs. Using the fused (deduped) size as a floor
+    // so a pure-semantic match (BM25 total 0, kNN hits > 0) isn't reported as 0.
+    const total = Math.max(bm25?.total ?? 0, fused.length);
     const didYouMean =
       total < this.env.didYouMeanThreshold && bm25 ? this.pickDidYouMean(bm25, params.q) : null;
 

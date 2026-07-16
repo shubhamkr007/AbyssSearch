@@ -19,6 +19,7 @@ function Get-Health([string]$Url) {
 $targets = @(
   @{ Name = 'elasticsearch'; Url = 'http://localhost:9200' },
   @{ Name = 'analysis-ml';   Url = 'http://localhost:8000/healthz' },
+  @{ Name = 'tenant-config'; Url = 'http://localhost:8001/healthz' },
   @{ Name = 'search';        Url = 'http://localhost:8080/healthz' },
   @{ Name = 'gateway';       Url = 'http://localhost:8081/healthz' },
   @{ Name = 'ingestion';     Url = 'http://localhost:8090/healthz' }
