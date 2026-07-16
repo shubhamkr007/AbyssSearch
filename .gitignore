@@ -30,3 +30,11 @@ coverage/
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# SQLite / local dev databases (ingestion job metadata, etc. - runtime state)
+*.db
+*.sqlite
+*.sqlite3
+
+# Local dev stack runtime state
+scripts/.dev-pids.json
