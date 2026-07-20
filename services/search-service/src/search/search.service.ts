@@ -79,27 +79,34 @@ export class SearchService {
     const params: SearchParams = { tenant, tenantId, q: dto.q, tab, filters, from, size, sources: dto.sources };
 
     const degradedReasons: string[] = [];
+    const q = dto.q.trim();
+    const browseAll = q.length === 0;
 
-    // 1) query embedding (cached), degrade to BM25-only on failure
+    // 1) query embedding (cached), degrade to BM25-only on failure.
+    // Skip for blank "browse all" queries — there is nothing meaningful to embed.
     let embedMs = 0;
     let vector: number[] | null = null;
-    const cacheKey = dto.q.trim().toLowerCase();
-    const cached = this.vectorCache.get(cacheKey);
-    if (cached) {
-      vector = cached;
-    } else {
-      const te = now();
-      vector = await this.embedding.embedQuery(dto.q);
-      embedMs = now() - te;
-      if (vector) this.vectorCache.set(cacheKey, vector);
-      else degradedReasons.push('embedding_unavailable');
+    if (!browseAll) {
+      const cacheKey = q.toLowerCase();
+      const cached = this.vectorCache.get(cacheKey);
+      if (cached) {
+        vector = cached;
+      } else {
+        const te = now();
+        vector = await this.embedding.embedQuery(q);
+        embedMs = now() - te;
+        if (vector) this.vectorCache.set(cacheKey, vector);
+        else degradedReasons.push('embedding_unavailable');
+      }
     }
 
     // 2) retrieval
     const tes = now();
     let outcome: RetrievalOutcome;
     try {
-      if (vector && this.env.hybridMode === 'native_rrf') {
+      if (browseAll) {
+        outcome = await this.runBm25Only(index, { ...params, q: '' });
+      } else if (vector && this.env.hybridMode === 'native_rrf') {
         outcome = await this.runNativeRrf(index, params, vector).catch(() =>
           this.runClientRrf(index, params, vector),
         );

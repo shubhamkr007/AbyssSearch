@@ -13,6 +13,12 @@ import {
   HttpConfigClient,
 } from './clients/config.client';
 import {
+  FakeRagClient,
+  HttpRagClient,
+  RAG_CLIENT,
+  type RagClient,
+} from './clients/rag.client';
+import {
   FakeSearchClient,
   HttpSearchClient,
   SEARCH_CLIENT,
@@ -35,7 +41,7 @@ function seededFakeConfig(): ConfigClient {
   const ctx = {
     tenantId: 'demo-tenant',
     prefix: 'demo',
-    scopes: ['search'],
+    scopes: ['search', 'rag'],
     originAllowlist: [],
     rateLimit: env.rateLimitDefault,
   };
@@ -101,6 +107,14 @@ const searchProvider: Provider = env.useFakeSearch
       inject: [APP_ENV],
     };
 
+const ragProvider: Provider = env.useFakeRag
+  ? { provide: RAG_CLIENT, useFactory: (): RagClient => new FakeRagClient() }
+  : {
+      provide: RAG_CLIENT,
+      useFactory: (e: AppEnv) => new HttpRagClient(e.ragServiceUrl, e.ragTimeoutMs),
+      inject: [APP_ENV],
+    };
+
 @Module({
   imports: [
     LoggerModule.forRoot({
@@ -121,6 +135,7 @@ const searchProvider: Provider = env.useFakeSearch
     { provide: APP_ENV, useValue: env },
     configProvider,
     searchProvider,
+    ragProvider,
     { provide: RATE_LIMITER, useClass: InMemoryRateLimiter },
     { provide: APP_INTERCEPTOR, useClass: RetryAfterInterceptor },
     MetricsService,

@@ -1,6 +1,13 @@
-import { Inject, Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  NotImplementedException,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 import { CONFIG_CLIENT, type ConfigClient } from '../clients/config.client';
+import { RAG_CLIENT, type RagClient } from '../clients/rag.client';
 import { SEARCH_CLIENT, type SearchClient } from '../clients/search.client';
 import { APP_ENV, type AppEnv } from '../config/env';
 import type {
@@ -8,10 +15,11 @@ import type {
   S3SearchRequest,
   S3SuggestResponse,
   TenantContext,
+  WidgetAnswerResponse,
   WidgetSearchResponse,
 } from '../domain/types';
 import { MetricsService } from '../metrics/metrics.service';
-import type { SearchBodyDto, SuggestQueryDto } from './dto';
+import type { AnswerBodyDto, SearchBodyDto, SuggestQueryDto } from './dto';
 
 /**
  * Flatten the widget filter object into the flat `{ field: string[] }` shape the
@@ -44,6 +52,7 @@ export class GatewayService {
     @Inject(CONFIG_CLIENT) private readonly config: ConfigClient,
     @Inject(APP_ENV) private readonly env: AppEnv,
     @Optional() @Inject(MetricsService) private readonly metrics?: MetricsService,
+    @Optional() @Inject(RAG_CLIENT) private readonly rag?: RagClient,
   ) {}
 
   async doSearch(
@@ -90,6 +99,51 @@ export class GatewayService {
         entitiesByType: r.entitiesByType,
       })),
       facets: resp.facets,
+    };
+  }
+
+  async doAnswer(
+    ctx: TenantContext,
+    dto: AnswerBodyDto,
+    correlationId?: string,
+  ): Promise<WidgetAnswerResponse> {
+    if (!this.env.ragEnabled || !this.rag) {
+      throw new NotImplementedException('RAG answers are not enabled');
+    }
+    const started = Date.now();
+    let resp;
+    try {
+      resp = await this.rag.answer(
+        {
+          query: dto.query,
+          // ES docs are scoped by the tenant PREFIX (the Search Service filters the
+          // same way: it uses `tenant` = prefix as the ES tenant_id filter).
+          tenantId: ctx.prefix,
+          prefix: ctx.prefix,
+          tab: dto.tab,
+          filters: dto.filters,
+          topK: dto.topK,
+        },
+        correlationId,
+      );
+    } catch {
+      this.metrics?.downstreamErrors.inc({ service: 'rag' });
+      throw new ServiceUnavailableException('answers are temporarily unavailable');
+    }
+
+    return {
+      query: resp.query,
+      answer: resp.answer,
+      model: resp.model,
+      degraded: resp.degraded,
+      took_ms: Date.now() - started,
+      citations: resp.citations.map((c) => ({
+        n: c.n,
+        title: c.title,
+        url: c.url,
+        source: c.source,
+        snippet: c.snippet,
+      })),
     };
   }
 

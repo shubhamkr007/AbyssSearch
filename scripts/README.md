@@ -23,6 +23,9 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings
 # Start with real S4 tenant/config (in-memory) instead of the seeded fake config
 powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig
 
+# Start with the RAG service + Answers tab (POST /v1/answers)
+powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -Rag
+
 # Force a rebuild of the Node services first
 powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Build
 
@@ -46,6 +49,7 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-down.ps1
 | search-service | 8080 | tenant-scoped hybrid retrieval |
 | api-gateway (BFF) | 8081 | **point the widget's `api-base` here** |
 | ingestion (orchestrator) | 8090 | `/docs`; `ANALYZE` + ingest jobs |
+| rag S12 (`-Rag`) | 8092 | `/docs`; grounded answers (Answers tab) |
 | elasticsearch | 9200 | run natively (not managed by these scripts) |
 
 ## Modes
@@ -59,6 +63,12 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-down.ps1
   restart; `verify-gaps.ps1` provisions tenants/keys via the S4 admin API each run.
   To persist across restarts, run Postgres (Docker/Podman or native) and start S4
   with `USE_IN_MEMORY=false` + a `DATABASE_URL` (see `services/tenant-config/.env.example`).
+- **`-Rag`** starts the RAG service (S12) on :8092 (reusing the ingestion venv) and
+  sets the gateway's `RAG_ENABLED=true` so `POST /v1/answers` works and the widget's
+  **Answers** tab is functional. Retrieval is tenant-scoped hybrid over the same ES;
+  generation uses a self-hosted **Ollama** model if reachable. Without Ollama the
+  answer degrades to the most relevant source text (extractive), so the tab still
+  works. Install Ollama (free) and `ollama pull llama3.2:1b` for real generation.
 
 ## verify-gaps.ps1
 

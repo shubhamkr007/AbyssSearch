@@ -12,6 +12,8 @@ export interface AppEnv {
   configCacheTtlSeconds: number;
   keyCacheTtlSeconds: number;
   downstreamTimeoutMs: number;
+  /** Longer timeout for RAG (LLM generation is much slower than search/config). */
+  ragTimeoutMs: number;
 
   logLevel: string;
   ragEnabled: boolean;
@@ -22,6 +24,8 @@ export interface AppEnv {
   useFakeConfig: boolean;
   /** Fake only the Search client (default: useFake). */
   useFakeSearch: boolean;
+  /** Fake only the RAG client (default: useFake). */
+  useFakeRag: boolean;
 }
 
 function num(value: string | undefined, fallback: number): number {
@@ -48,6 +52,7 @@ export function loadEnv(): AppEnv {
     configCacheTtlSeconds: num(process.env.CONFIG_CACHE_TTL_SECONDS, 30),
     keyCacheTtlSeconds: num(process.env.KEY_CACHE_TTL_SECONDS, 30),
     downstreamTimeoutMs: num(process.env.DOWNSTREAM_TIMEOUT_MS, 3000),
+    ragTimeoutMs: num(process.env.RAG_TIMEOUT_MS, 60000),
 
     logLevel: process.env.LOG_LEVEL ?? 'info',
     ragEnabled: bool(process.env.RAG_ENABLED, false),
@@ -55,5 +60,6 @@ export function loadEnv(): AppEnv {
     useFake,
     useFakeConfig: bool(process.env.USE_FAKE_CONFIG, useFake),
     useFakeSearch: bool(process.env.USE_FAKE_SEARCH, useFake),
+    useFakeRag: bool(process.env.USE_FAKE_RAG, useFake),
   };
 }

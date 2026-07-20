@@ -77,6 +77,12 @@ describe('buildBm25Body', () => {
     expect(body.suggest.dym.phrase.field).toBe('content_all');
     expect(body.suggest.text).toBe('hello world');
   });
+  it('uses match_all for a blank query (browse all docs)', () => {
+    const body = buildBm25Body(params({ q: '   ' }), cfg, { includeDidYouMean: true }) as any;
+    expect(body.query.bool.must[0]).toEqual({ match_all: {} });
+    expect(body.query.bool.filter).toContainEqual({ term: { tenant_id: 'acme' } });
+    expect(body.suggest).toBeUndefined();
+  });
 });
 
 describe('buildKnnBody', () => {

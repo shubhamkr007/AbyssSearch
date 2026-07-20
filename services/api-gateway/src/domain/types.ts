@@ -67,6 +67,37 @@ export interface S3SuggestResponse {
   suggestions: string[];
 }
 
+// ---- S12 RAG Service contract (downstream) ------------------------------
+
+export interface S12AnswerRequest {
+  query: string;
+  tenantId: string;
+  prefix: string;
+  tab?: string;
+  filters?: Record<string, unknown>;
+  topK?: number;
+}
+
+export interface S12Citation {
+  n: number;
+  id: string;
+  title?: string;
+  url?: string;
+  source?: string;
+  score?: number;
+  snippet?: string;
+}
+
+export interface S12AnswerResponse {
+  query: string;
+  answer: string;
+  model: string;
+  usedContext: boolean;
+  degraded: boolean;
+  degradedReasons?: string[];
+  citations: S12Citation[];
+}
+
 // ---- Public widget contract (what the gateway returns) ------------------
 
 export interface WidgetSearchResult {
@@ -92,4 +123,21 @@ export interface WidgetSearchResponse {
   degraded: boolean;
   results: WidgetSearchResult[];
   facets: Record<string, Array<{ value: string; count: number }>>;
+}
+
+export interface WidgetAnswerCitation {
+  n: number;
+  title?: string;
+  url?: string;
+  source?: string;
+  snippet?: string;
+}
+
+export interface WidgetAnswerResponse {
+  query: string;
+  answer: string;
+  model: string;
+  degraded: boolean;
+  took_ms: number;
+  citations: WidgetAnswerCitation[];
 }

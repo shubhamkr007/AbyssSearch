@@ -44,6 +44,24 @@ function entityLabel(label: string): string {
   return ENTITY_LABELS[label] ?? label.charAt(0) + label.slice(1).toLowerCase();
 }
 
+/**
+ * Render Elasticsearch highlight snippets. ES wraps matches in <em>…</em>;
+ * we turn those into real React <em> nodes and treat everything else as text
+ * (so other tags / markup cannot inject into the shadow DOM).
+ */
+function HighlightedSnippet({ text }: { text: string }) {
+  const parts = text.split(/(<em>[\s\S]*?<\/em>)/gi);
+  return (
+    <p className="es-result-snippet">
+      {parts.map((part, i) => {
+        const match = /^<em>([\s\S]*?)<\/em>$/i.exec(part);
+        if (match) return <em key={i}>{match[1]}</em>;
+        return <span key={i}>{part}</span>;
+      })}
+    </p>
+  );
+}
+
 interface EntityChip {
   label: string;
   text: string;
@@ -178,7 +196,7 @@ export function Results({ data, onResultClick, onEntityClick }: ResultsProps) {
                 )}
               </h3>
               {item.url && <div className="es-result-url">{item.url}</div>}
-              {item.snippet && <p className="es-result-snippet">{item.snippet}</p>}
+              {item.snippet && <HighlightedSnippet text={item.snippet} />}
               {(item.source || (item.tags && item.tags.length > 0)) && (
                 <div className="es-tags">
                   {item.source && <span className="es-source">{item.source}</span>}

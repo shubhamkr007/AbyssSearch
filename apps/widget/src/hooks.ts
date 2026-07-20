@@ -1,7 +1,14 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
-import type { SearchParams, SearchResponse, SuggestResponse, WidgetConfig } from './api/types';
+import type {
+  AnswerParams,
+  AnswerResponse,
+  SearchParams,
+  SearchResponse,
+  SuggestResponse,
+  WidgetConfig,
+} from './api/types';
 import { useWidget } from './context';
 
 /** Debounce a rapidly-changing value (used to throttle suggest requests). */
@@ -46,6 +53,19 @@ export function useSuggest(query: string, tab: string, enabled: boolean) {
     placeholderData: keepPreviousData,
     staleTime: 30 * 1000,
     retry: false,
+  });
+}
+
+/** RAG answer for the Answers tab. Fires only when explicitly enabled (LLM is slow). */
+export function useAnswer(params: AnswerParams, enabled: boolean) {
+  const { client } = useWidget();
+  return useQuery<AnswerResponse>({
+    queryKey: ['answer', params],
+    queryFn: ({ signal }) => client.answer(params, signal),
+    enabled,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 }
 

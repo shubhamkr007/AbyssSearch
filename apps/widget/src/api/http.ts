@@ -1,4 +1,6 @@
 import {
+  AnswerParams,
+  AnswerResponse,
   ApiClient,
   DEFAULT_TABS,
   FacetConfig,
@@ -99,6 +101,20 @@ export class HttpApiClient implements ApiClient {
     if (params.tab) qs.set('tab', params.tab);
     if (params.size) qs.set('size', String(params.size));
     return this.request<SuggestResponse>('GET', `/v1/suggest?${qs.toString()}`, undefined, signal);
+  }
+
+  answer(params: AnswerParams, signal?: AbortSignal): Promise<AnswerResponse> {
+    return this.request<AnswerResponse>(
+      'POST',
+      '/v1/answers',
+      {
+        query: params.query,
+        tab: params.tab,
+        filters: params.filters,
+        topK: params.topK,
+      },
+      signal,
+    );
   }
 
   // No gateway trending endpoint yet (Phase 2 analytics). The widget falls back

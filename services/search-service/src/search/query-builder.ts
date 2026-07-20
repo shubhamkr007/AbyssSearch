@@ -102,21 +102,24 @@ export function buildBm25Body(
   cfg: BuilderConfig,
   opts: { includeDidYouMean?: boolean } = {},
 ): JsonObject {
+  const q = (params.q ?? '').trim();
+  // Empty query = browse all docs for the tenant (still tenant-filtered).
+  const must: Clause[] = q.length > 0 ? [multiMatch(q, cfg.searchFields)] : [{ match_all: {} }];
   const body: JsonObject = {
     from: params.from,
     size: params.size,
     track_total_hits: true,
     query: {
       bool: {
-        must: [multiMatch(params.q, cfg.searchFields)],
+        must,
         filter: filterClauses(params.tenantId, params.filters),
       },
     },
     aggs: facetAggs(cfg.facetFields),
     highlight: highlight(cfg.highlightFields),
   };
-  if (opts.includeDidYouMean) {
-    body.suggest = didYouMeanSuggest(params.q);
+  if (opts.includeDidYouMean && q.length > 0) {
+    body.suggest = didYouMeanSuggest(q);
   }
   return body;
 }

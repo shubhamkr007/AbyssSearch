@@ -22,7 +22,8 @@ $targets = @(
   @{ Name = 'tenant-config'; Url = 'http://localhost:8001/healthz' },
   @{ Name = 'search';        Url = 'http://localhost:8080/healthz' },
   @{ Name = 'gateway';       Url = 'http://localhost:8081/healthz' },
-  @{ Name = 'ingestion';     Url = 'http://localhost:8090/healthz' }
+  @{ Name = 'ingestion';     Url = 'http://localhost:8090/healthz' },
+  @{ Name = 'rag';           Url = 'http://localhost:8092/healthz' }
 )
 
 Write-Host '=== Enterprise Search - status ===' -ForegroundColor Green

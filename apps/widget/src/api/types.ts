@@ -39,6 +39,30 @@ export interface SuggestResponse {
   suggestions: string[];
 }
 
+export interface AnswerCitation {
+  n: number;
+  title?: string;
+  url?: string;
+  source?: string;
+  snippet?: string;
+}
+
+export interface AnswerResponse {
+  query: string;
+  answer: string;
+  model: string;
+  degraded: boolean;
+  took_ms: number;
+  citations: AnswerCitation[];
+}
+
+export interface AnswerParams {
+  query: string;
+  tab?: string;
+  filters?: Record<string, string[]>;
+  topK?: number;
+}
+
 export interface TabConfig {
   key: string;
   label: string;
@@ -76,6 +100,8 @@ export interface ApiClient {
   suggest(params: SuggestParams, signal?: AbortSignal): Promise<SuggestResponse>;
   /** Popular queries for the right-rail. Gateway endpoint is Phase 2, so HTTP returns []. */
   trending(signal?: AbortSignal): Promise<string[]>;
+  /** RAG grounded answer (Answers tab). Throws if the gateway has RAG disabled. */
+  answer(params: AnswerParams, signal?: AbortSignal): Promise<AnswerResponse>;
 }
 
 export const DEFAULT_TABS: TabConfig[] = [

@@ -4,6 +4,7 @@ import { type CSSProperties, type KeyboardEvent, useId, useMemo, useState } from
 import { FakeApiClient } from './api/fake';
 import { HttpApiClient } from './api/http';
 import {
+  type AnswerParams,
   type ApiClient,
   DEFAULT_TABS,
   type FacetConfig,
@@ -11,6 +12,7 @@ import {
   type SearchResultItem,
   type TabConfig,
 } from './api/types';
+import { AnswerPanel } from './components/AnswerPanel';
 import { DidYouMean } from './components/DidYouMean';
 import { Facets } from './components/Facets';
 import { Pagination } from './components/Pagination';
@@ -20,12 +22,13 @@ import { SideRail } from './components/SideRail';
 import { Suggestions } from './components/Suggestions';
 import { Tabs } from './components/Tabs';
 import { WidgetContext, type WidgetContextValue, useWidget } from './context';
-import { useConfig, useRelated, useSearch, useSuggest, useTrending } from './hooks';
+import { useAnswer, useConfig, useRelated, useSearch, useSuggest, useTrending } from './hooks';
 import { addRecent, getRecent } from './recent';
 import { styles } from './styles';
 import { useHostEmit } from './useHostEmit';
 
 const PAGE_SIZE = 10;
+const ANSWERS_TAB: TabConfig = { key: 'answers', label: 'Answers' };
 
 export interface WidgetProps {
   tenantKey?: string;
@@ -158,6 +161,8 @@ export function SearchApp({
 
   const [input, setInput] = useState('');
   const [query, setQuery] = useState('');
+  /** True after the user submits (including blank submit = browse all docs). */
+  const [searched, setSearched] = useState(false);
   const [tab, setTab] = useState('all');
   const [filters, setFilters] = useState<Record<string, string[]>>({});
   const [page, setPage] = useState(1);
@@ -168,15 +173,25 @@ export function SearchApp({
   );
   const [feedbackSent, setFeedbackSent] = useState(false);
 
-  const tabs = tabOverride ?? configQ.data?.tabs ?? DEFAULT_TABS;
+  const baseTabs = tabOverride ?? configQ.data?.tabs ?? DEFAULT_TABS;
+  const tabs = baseTabs.some((t) => t.key === ANSWERS_TAB.key)
+    ? baseTabs
+    : [...baseTabs, ANSWERS_TAB];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : (tabs[0]?.key ?? 'all');
+  const isAnswersTab = activeTab === ANSWERS_TAB.key;
 
   const searchParams = useMemo<SearchParams>(
     () => ({ query, tab: activeTab, filters, page, size: PAGE_SIZE }),
     [query, activeTab, filters, page],
   );
   const hasQuery = query.trim().length > 0;
-  const searchQ = useSearch(searchParams, hasQuery);
+  const searchQ = useSearch(searchParams, searched && !isAnswersTab);
+  const answerParams = useMemo<AnswerParams>(
+    () => ({ query, tab: activeTab, filters, topK: 5 }),
+    [query, activeTab, filters],
+  );
+  // Answers need a real question; blank browse-all only applies to search results.
+  const answerQ = useAnswer(answerParams, searched && hasQuery && isAnswersTab);
   const suggestQ = useSuggest(input, activeTab, focused && input.trim().length > 0);
   const trendingQ = useTrending();
   const relatedQ = useRelated(query, activeTab);
@@ -195,17 +210,19 @@ export function SearchApp({
     return Object.keys(searchQ.data?.facets ?? {}).map((f) => ({ field: f, label: humanize(f) }));
   }, [configQ.data, searchQ.data]);
   const hasFacets = facetConfigs.some((c) => (searchQ.data?.facets[c.field]?.length ?? 0) > 0);
+  const showFacets = !isAnswersTab && hasFacets;
 
   const commit = (raw: string) => {
+    // Allow blank submit: empty query browses all tenant documents.
     const trimmed = raw.trim();
-    if (!trimmed) return;
     setQuery(trimmed);
     setInput(trimmed);
+    setSearched(true);
     setPage(1);
     setFocused(false);
     setActiveIndex(-1);
     setFeedbackSent(false);
-    if (!disableHistory) setRecent(addRecent(tenantKey, trimmed));
+    if (!disableHistory && trimmed) setRecent(addRecent(tenantKey, trimmed));
     emit('search', { query: trimmed, tab: activeTab, filters });
   };
 
@@ -304,12 +321,12 @@ export function SearchApp({
         )}
       </div>
 
-      {hasQuery && (
+      {searched && (
         <div className="es-panel">
           <Tabs tabs={tabs} active={activeTab} onChange={onTabChange} />
-          {didYouMean && <DidYouMean suggestion={didYouMean} onPick={commit} />}
-          <div className={hasFacets ? 'es-body' : 'es-body es-nofacets'}>
-            {hasFacets && (
+          {!isAnswersTab && didYouMean && <DidYouMean suggestion={didYouMean} onPick={commit} />}
+          <div className={showFacets ? 'es-body' : 'es-body es-nofacets'}>
+            {showFacets && (
               <Facets
                 configs={facetConfigs}
                 facets={searchQ.data?.facets ?? {}}
@@ -318,7 +335,21 @@ export function SearchApp({
               />
             )}
             <div className="es-main">
-              {searchQ.isError ? (
+              {isAnswersTab ? (
+                hasQuery ? (
+                  <AnswerPanel
+                    data={answerQ.data}
+                    isLoading={answerQ.isLoading}
+                    isError={answerQ.isError}
+                    onCitationClick={(c) =>
+                      emit('resultclick', { url: c.url, tab: activeTab, source: c.source })
+                    }
+                    onRetry={() => answerQ.refetch()}
+                  />
+                ) : (
+                  <div className="es-state">Type a question, then open Answers.</div>
+                )
+              ) : searchQ.isError ? (
                 <div className="es-notice" role="alert">
                   Search is temporarily unavailable.
                   <button type="button" onClick={() => searchQ.refetch()}>

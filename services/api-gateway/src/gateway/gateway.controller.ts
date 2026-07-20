@@ -3,7 +3,6 @@ import {
   Controller,
   Get,
   HttpCode,
-  NotImplementedException,
   Post,
   Query,
   UseGuards,
@@ -13,7 +12,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { CorrelationId, RequireScopes, Tenant } from '../auth/scopes.decorator';
 import type { TenantContext } from '../domain/types';
 import { RateLimitGuard } from '../ratelimit/rate-limit.guard';
-import { SearchBodyDto, SuggestQueryDto } from './dto';
+import { AnswerBodyDto, SearchBodyDto, SuggestQueryDto } from './dto';
 import { GatewayService } from './gateway.service';
 
 @Controller('v1')
@@ -60,8 +59,11 @@ export class GatewayController {
   @Post('answers')
   @HttpCode(200)
   @RequireScopes('rag')
-  answers() {
-    // RAG (S12) is Phase 2; the route exists so clients can feature-detect.
-    throw new NotImplementedException('RAG answers are not enabled (Phase 2)');
+  answers(
+    @Tenant() ctx: TenantContext,
+    @Body() dto: AnswerBodyDto,
+    @CorrelationId() cid?: string,
+  ) {
+    return this.gateway.doAnswer(ctx, dto, cid);
   }
 }

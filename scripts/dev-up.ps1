@@ -9,6 +9,7 @@
     search-service                : 8080
     api-gateway (BFF)             : 8081   <- point the widget's api-base here
     ingestion (orchestrator)      : 8090
+    rag (-Rag)                    : 8092   (Answers tab; needs analysis-ml + optional Ollama)
 
   Elasticsearch is expected to already be running on :9200 (you run it natively).
 
@@ -23,6 +24,12 @@
   config. In-memory state is not persisted across restarts; provision tenants/keys
   via the S4 admin API (see scripts\verify-gaps.ps1).
 
+.PARAMETER Rag
+  Also start the RAG service (S12) on :8092 and enable the gateway's /v1/answers
+  route (widget "Answers" tab). Retrieval uses the same ES; generation uses a
+  self-hosted Ollama model if reachable, otherwise it degrades to an extractive
+  answer. Best combined with -Embeddings for semantic retrieval.
+
 .PARAMETER Build
   Force a rebuild of the Node services before starting.
 
@@ -30,10 +37,12 @@
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig
+  powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -Rag
 #>
 param(
   [switch]$Embeddings,
   [switch]$RealConfig,
+  [switch]$Rag,
   [switch]$Build
 )
 
@@ -44,6 +53,9 @@ $tconf     = Join-Path $root 'services\tenant-config'
 $search    = Join-Path $root 'services\search-service'
 $gateway   = Join-Path $root 'services\api-gateway'
 $ingest    = Join-Path $root 'services\ingestion'
+$ragDir    = Join-Path $root 'services\rag'
+# RAG reuses the ingestion venv (identical deps: fastapi/httpx/elasticsearch/...).
+$ingestVenvPy = Join-Path $ingest '.venv\Scripts\python.exe'
 
 function Test-Http([string]$Url) {
   try { Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 3 | Out-Null; return $true }
@@ -122,11 +134,23 @@ if ($RealConfig) {
 } else {
   $gatewayEnv['USE_FAKE_CONFIG'] = 'true'
 }
+if ($Rag) {
+  $gatewayEnv['RAG_ENABLED'] = 'true'
+  $gatewayEnv['USE_FAKE_RAG'] = 'false'
+  $gatewayEnv['RAG_SERVICE_URL'] = 'http://localhost:8092'
+}
 $pids += Start-Svc -Title 'es-gateway' -WorkDir $gateway -EnvVars $gatewayEnv -RunCmd 'node dist\main.js'
 
 $pids += Start-Svc -Title 'es-ingestion' -WorkDir $ingest -EnvVars @{
   PORT = '8090'; USE_FAKE = 'false'; USE_INLINE = 'true'; ELASTICSEARCH_URL = 'http://localhost:9200'; NER_SERVICE_URL = 'http://localhost:8000'; EMBEDDING_SERVICE_URL = 'http://localhost:8000'; ADMIN_TOKEN = 'dev-admin-token'; DATABASE_URL = 'sqlite+pysqlite:///./ingestion.db'; LOG_LEVEL = 'info'
 } -RunCmd "& '.\.venv\Scripts\python.exe' -m uvicorn app.main:app --port 8090"
+
+if ($Rag) {
+  Write-Host 'rag           : S12 on :8092 (Answers tab). Set OLLAMA_MODEL for real generation.' -ForegroundColor DarkGray
+  $pids += Start-Svc -Title 'es-rag' -WorkDir $ragDir -EnvVars @{
+    PORT = '8092'; USE_FAKE = 'false'; ELASTICSEARCH_URL = 'http://localhost:9200'; EMBEDDING_SERVICE_URL = 'http://localhost:8000'; OLLAMA_URL = 'http://localhost:11434'; OLLAMA_MODEL = 'llama3.2:1b'; LOG_LEVEL = 'info'
+  } -RunCmd "& '$ingestVenvPy' -m uvicorn app.main:app --port 8092"
+}
 
 # Record host window PIDs so dev-down can close the windows precisely.
 $pidFile = Join-Path $PSScriptRoot '.dev-pids.json'
@@ -144,6 +168,9 @@ $targets += @(
   @{ Name = 'gateway';     Url = 'http://localhost:8081/healthz'; Timeout = 30 },
   @{ Name = 'ingestion';   Url = 'http://localhost:8090/healthz'; Timeout = 30 }
 )
+if ($Rag) {
+  $targets += @{ Name = 'rag'; Url = 'http://localhost:8092/healthz'; Timeout = 30 }
+}
 Write-Host ''
 Write-Host 'Waiting for services to become healthy...' -ForegroundColor Cyan
 foreach ($t in $targets) {
@@ -163,7 +190,13 @@ if ($RealConfig) { Write-Host '  tenant-cfg  : http://localhost:8001        (rea
 Write-Host '  search      : http://localhost:8080/healthz'
 Write-Host '  gateway     : http://localhost:8081        (widget api-base)'
 Write-Host '  ingestion   : http://localhost:8090/docs'
+if ($Rag) { Write-Host '  rag         : http://localhost:8092/docs   (Answers tab; POST /v1/answers via gateway)' }
 Write-Host ''
+if ($Rag) {
+  Write-Host 'RAG is on. For real generative answers install Ollama (free) and pull a model:' -ForegroundColor Cyan
+  Write-Host '  ollama pull llama3.2:1b     # otherwise answers degrade to extractive (top source)'
+  Write-Host ''
+}
 if ($RealConfig) {
   Write-Host 'Real config is empty on start. Provision tenants + keys and verify hybrid/isolation:' -ForegroundColor Cyan
   Write-Host '  powershell -ExecutionPolicy Bypass -File scripts\verify-gaps.ps1'

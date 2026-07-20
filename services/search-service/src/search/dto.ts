@@ -23,8 +23,8 @@ export class SearchDto {
   @IsString()
   tenantId?: string;
 
+  // Empty string is allowed: browse all tenant docs (match_all + tenant filter).
   @IsString()
-  @MinLength(1)
   @MaxLength(512)
   q!: string;
 

@@ -11,8 +11,8 @@ import {
 } from 'class-validator';
 
 export class SearchBodyDto {
+  // Empty string is allowed: browse all docs for the tenant.
   @IsString()
-  @MinLength(1)
   @MaxLength(512)
   query!: string;
 
@@ -40,6 +40,28 @@ export class SearchBodyDto {
   @IsString()
   @MaxLength(32)
   sort?: string;
+}
+
+export class AnswerBodyDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(512)
+  query!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  tab?: string;
+
+  @IsOptional()
+  @IsObject()
+  filters?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  topK?: number;
 }
 
 export class SuggestQueryDto {

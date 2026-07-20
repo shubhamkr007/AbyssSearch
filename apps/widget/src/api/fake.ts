@@ -1,4 +1,6 @@
 import {
+  AnswerParams,
+  AnswerResponse,
   ApiClient,
   DEFAULT_TABS,
   FacetBucket,
@@ -180,6 +182,19 @@ function didYouMean(terms: string[]): string | null {
   return corrected.some((t, i) => t !== terms[i]) ? corrected.join(' ') : null;
 }
 
+/** Wrap whole-word matches of each query term in <em>…</em> (ES-style highlights). */
+function highlightTerms(text: string, terms: string[]): string {
+  if (!terms.length) return text;
+  const unique = uniq(terms.filter((t) => t.length >= 2));
+  if (unique.length === 0) return text;
+  const pattern = new RegExp(`\\b(${unique.map(escapeRegExp).join('|')})\\b`, 'gi');
+  return text.replace(pattern, '<em>$1</em>');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (ms <= 0) {
@@ -222,9 +237,11 @@ export class FakeApiClient implements ApiClient {
     const wantSource = TAB_SOURCE[params.tab];
     const inTab = DOCS.filter((d) => (wantSource ? d.source === wantSource : true));
 
-    let matched = inTab
-      .map((d) => ({ d, score: scoreDoc(d, terms) }))
-      .filter((x) => x.score > 0);
+    // Blank query = return every doc in the tab (browse-all).
+    let matched = inTab.map((d) => ({ d, score: scoreDoc(d, terms) }));
+    if (terms.length > 0) {
+      matched = matched.filter((x) => x.score > 0);
+    }
     matched.sort((a, b) => b.score - a.score || a.d.title.localeCompare(b.d.title));
 
     const facets = computeFacets(matched.map((x) => x.d));
@@ -248,7 +265,8 @@ export class FakeApiClient implements ApiClient {
     const results: SearchResultItem[] = slice.map((x) => ({
       id: x.d.id,
       title: x.d.title,
-      snippet: x.d.body,
+      // Wrap matched query terms in <em> so the UI can highlight them (same as ES).
+      snippet: highlightTerms(x.d.body, terms),
       url: x.d.url,
       tags: x.d.tags,
       score: x.score,
@@ -274,6 +292,38 @@ export class FakeApiClient implements ApiClient {
   async trending(signal?: AbortSignal): Promise<string[]> {
     await sleep(Math.min(this.delayMs, 40), signal);
     return ['kubernetes runbook', 'security policy', 'Q3 results', 'onboarding', 'expenses'];
+  }
+
+  async answer(params: AnswerParams, signal?: AbortSignal): Promise<AnswerResponse> {
+    const started = Date.now();
+    // A touch slower than search to mimic generation latency.
+    await sleep(this.delayMs * 2, signal);
+    const terms = tokenize(params.query);
+    const matched = DOCS.map((d) => ({ d, score: scoreDoc(d, terms) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score || a.d.title.localeCompare(b.d.title))
+      .slice(0, params.topK ?? 3);
+
+    const citations = matched.map((x, i) => ({
+      n: i + 1,
+      title: x.d.title,
+      url: x.d.url,
+      source: x.d.source,
+      snippet: x.d.body,
+    }));
+
+    const answer = matched.length
+      ? `${matched[0].d.body} [1]`
+      : "I couldn't find anything relevant to answer that question.";
+
+    return {
+      query: params.query,
+      answer,
+      model: 'fake-llm',
+      degraded: matched.length === 0,
+      took_ms: Date.now() - started,
+      citations,
+    };
   }
 
   async suggest(params: SuggestParams, signal?: AbortSignal): Promise<SuggestResponse> {

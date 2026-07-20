@@ -9,7 +9,7 @@
 param()
 
 $ErrorActionPreference = 'SilentlyContinue'
-$ports = 8000, 8001, 8080, 8081, 8090
+$ports = 8000, 8001, 8080, 8081, 8090, 8092
 $stopped = $false
 
 Write-Host '=== Enterprise Search - dev down ===' -ForegroundColor Green
@@ -50,7 +50,7 @@ Get-Process -Name powershell -ErrorAction SilentlyContinue |
   }
 
 if (-not $stopped) {
-  Write-Host 'Nothing to stop - no stack services were running on 8000/8080/8081/8090.' -ForegroundColor Green
+  Write-Host 'Nothing to stop - no stack services were running on 8000/8001/8080/8081/8090/8092.' -ForegroundColor Green
 } else {
   Write-Host 'Stack stopped.' -ForegroundColor Green
 }
