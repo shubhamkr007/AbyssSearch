@@ -44,6 +44,11 @@ export class PrismaTenantRepository implements TenantRepository {
     return row ? this.mapTenant(row) : null;
   }
 
+  async listTenants(): Promise<Tenant[]> {
+    const rows = await this.prisma.tenant.findMany({ orderBy: { createdAt: 'desc' } });
+    return rows.map((r) => this.mapTenant(r));
+  }
+
   async createApiKey(input: CreateApiKeyInput): Promise<ApiKey> {
     return this.mapApiKey(await this.prisma.apiKey.create({ data: input }));
   }
@@ -61,6 +66,14 @@ export class PrismaTenantRepository implements TenantRepository {
     return this.mapApiKey(
       await this.prisma.apiKey.update({ where: { id }, data: { active } }),
     );
+  }
+
+  async listApiKeys(tenantId: string): Promise<ApiKey[]> {
+    const rows = await this.prisma.apiKey.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((r) => this.mapApiKey(r));
   }
 
   async getSources(tenantId: string): Promise<Source[]> {

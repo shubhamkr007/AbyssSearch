@@ -3,6 +3,7 @@ import json
 
 import structlog
 from fastapi import FastAPI, Response
+from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.api import router
@@ -41,6 +42,17 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(router)
+
+    # Admin Console (S11) posts ingest/analyze jobs from the browser.
+    origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins or ["*"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST"],
+        allow_headers=["authorization", "content-type"],
+        max_age=600,
+    )
 
     @app.get("/healthz")
     def healthz():

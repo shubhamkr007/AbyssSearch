@@ -56,6 +56,18 @@ export interface IssuedKey {
   createdAt: Date;
 }
 
+/** API-key metadata safe to list (never includes the secret or its hash). */
+export interface PublicApiKey {
+  id: string;
+  tenantId: string;
+  keyPrefix: string;
+  scopes: string[];
+  originAllowlist: string[];
+  rateLimit: number;
+  active: boolean;
+  createdAt: Date;
+}
+
 export interface AggregatedConfig {
   tenant: PublicTenant;
   tabs: TabConfig[];
@@ -81,6 +93,27 @@ export class TenantsService {
 
   async getTenant(id: string): Promise<PublicTenant> {
     return this.toPublic(await this.requireTenant(id));
+  }
+
+  async listTenants(): Promise<PublicTenant[]> {
+    const tenants = await this.repo.listTenants();
+    return tenants.map((t) => this.toPublic(t));
+  }
+
+  async listKeys(id: string): Promise<PublicApiKey[]> {
+    await this.requireTenant(id);
+    const keys = await this.repo.listApiKeys(id);
+    // Strip the hash; only non-sensitive metadata leaves the service.
+    return keys.map((k) => ({
+      id: k.id,
+      tenantId: k.tenantId,
+      keyPrefix: k.keyPrefix,
+      scopes: k.scopes,
+      originAllowlist: k.originAllowlist,
+      rateLimit: k.rateLimit,
+      active: k.active,
+      createdAt: k.createdAt,
+    }));
   }
 
   async verifyKey(key: string): Promise<TenantContext> {

@@ -23,6 +23,14 @@ async function bootstrap(): Promise<void> {
       transform: true,
     }),
   );
+  // Admin Console (S11) is a browser SPA that calls this API directly with the
+  // admin token. Reflect the request origin (the admin token still gates writes).
+  app.enableCors({
+    origin: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['authorization', 'x-admin-token', 'x-admin-actor', 'content-type'],
+    maxAge: 600,
+  });
   app.enableShutdownHooks();
 
   const env = loadEnv();

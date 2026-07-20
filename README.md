@@ -15,6 +15,7 @@ Everything in this stack is **open-source / zero license cost**.
 | **Ingestion (S5/S6)** | FastAPI + Celery-ready — ingest, enrich, `ANALYZE` (NER) jobs |
 | **Analysis-ML (S8/S9)** | FastAPI — embeddings (`bge-small-en-v1.5`) + NER (spaCy) |
 | **RAG (S12)** | FastAPI — hybrid retrieve + grounded answers with citations |
+| **Admin Console (S11)** | React SPA — tenants, API keys, tabs, sources, relevance, ingest/NER jobs, live search preview |
 | **Data** | Elasticsearch (search/vectors); Postgres/SQLite for config/jobs |
 
 Full architecture and roadmap: [`PROJECT_PLAN.md`](PROJECT_PLAN.md) · per-service specs: [`docs/services/`](docs/services/README.md)
@@ -46,6 +47,20 @@ http://localhost:5173/?api=http://localhost:8081&key=pk_test_demo
 
 Without `?api=` / `?key=` the widget uses offline demo data.
 
+### Admin Console (S11)
+
+The admin console is a browser SPA for onboarding tenants, issuing API keys, configuring tabs/sources/relevance, running ingest + NER jobs, and previewing search — all against the running backend.
+
+```powershell
+# Start the backend with the real tenant/config service (in-memory store)
+powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig
+
+# Start the console (http://localhost:5174)
+pnpm --filter @enterprise-search/admin dev
+```
+
+Open http://localhost:5174, then in **Settings** confirm the API bases and admin token (dev default: `dev-admin-token`). See [`apps/admin/README.md`](apps/admin/README.md).
+
 Stop / status:
 
 ```powershell
@@ -65,6 +80,8 @@ More flags and details: [`scripts/README.md`](scripts/README.md)
 | **api-gateway** | **8081** | widget `api-base` |
 | ingestion | 8090 | `/docs` — ingest + analyze |
 | rag | 8092 | `/docs` — answers |
+| **admin-console** | **5174** | `pnpm --filter @enterprise-search/admin dev` |
+| widget dev host | 5173 | `pnpm --filter @enterprise-search/widget dev` |
 | elasticsearch | 9200 | run natively |
 
 ## Embed the widget
@@ -113,11 +130,13 @@ curl -X POST http://localhost:8081/v1/answers \
 - Blank search = browse all tenant documents
 - Post-index NER via `POST /jobs/analyze`
 - Answers tab with grounded citations (Ollama optional)
+- Admin console for tenant/key/tab/source/relevance management + live search preview
 
 ## Repo layout
 
 ```text
 apps/widget/           # S1 embeddable search UI
+apps/admin/            # S11 admin console SPA
 services/
   api-gateway/         # S2 BFF
   search-service/      # S3 query plane

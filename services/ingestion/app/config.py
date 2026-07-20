@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     port: int = 8090
     log_level: str = "info"
     admin_token: str = "dev-admin-token"
+    # Comma-separated browser origins allowed to call this API (Admin Console).
+    # "*" reflects any origin (fine for dev; the admin token still gates access).
+    cors_origins: str = "*"
 
     database_url: str = "sqlite+pysqlite:///:memory:"
     celery_broker_url: str = "redis://localhost:6379/0"

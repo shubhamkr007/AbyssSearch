@@ -58,10 +58,12 @@ export interface TenantRepository {
   createTenant(input: CreateTenantInput): Promise<Tenant>;
   getTenant(id: string): Promise<Tenant | null>;
   getTenantByPrefix(prefix: string): Promise<Tenant | null>;
+  listTenants(): Promise<Tenant[]>;
 
   createApiKey(input: CreateApiKeyInput): Promise<ApiKey>;
   getActiveApiKeysByPrefix(keyPrefix: string): Promise<ApiKey[]>;
   setApiKeyActive(id: string, active: boolean): Promise<ApiKey | null>;
+  listApiKeys(tenantId: string): Promise<ApiKey[]>;
 
   getSources(tenantId: string): Promise<Source[]>;
   createSource(input: CreateSourceInput): Promise<Source>;

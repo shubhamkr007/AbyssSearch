@@ -51,6 +51,12 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-down.ps1
 | ingestion (orchestrator) | 8090 | `/docs`; `ANALYZE` + ingest jobs |
 | rag S12 (`-Rag`) | 8092 | `/docs`; grounded answers (Answers tab) |
 | elasticsearch | 9200 | run natively (not managed by these scripts) |
+| admin-console S11 | 5174 | run separately: `pnpm --filter @enterprise-search/admin dev` |
+| widget dev host | 5173 | run separately: `pnpm --filter @enterprise-search/widget dev` |
+
+> The admin console and widget dev host are Vite dev servers, started via `pnpm`
+> (not by `dev-up.ps1`). The console drives S4 + ingestion with the admin token,
+> so start the backend with **`-RealConfig`** first.
 
 ## Modes
 

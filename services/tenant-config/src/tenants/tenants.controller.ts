@@ -33,6 +33,22 @@ export class TenantsController {
     @Optional() @Inject(MetricsService) private readonly metrics?: MetricsService,
   ) {}
 
+  // ---- admin reads (tenant/key listing is sensitive) ---------------------
+
+  @Get('tenants')
+  @UseGuards(AdminGuard)
+  async listTenants() {
+    this.metrics?.configReads.inc({ endpoint: 'tenants.list' });
+    return this.tenants.listTenants();
+  }
+
+  @Get('tenants/:id/keys')
+  @UseGuards(AdminGuard)
+  async listKeys(@Param('id') id: string) {
+    this.metrics?.configReads.inc({ endpoint: 'keys.list' });
+    return this.tenants.listKeys(id);
+  }
+
   // ---- internal reads ----------------------------------------------------
 
   @Get('tenants/:id')

@@ -58,6 +58,12 @@ export class InMemoryTenantRepository implements TenantRepository {
     return null;
   }
 
+  async listTenants(): Promise<Tenant[]> {
+    return [...this.tenants.values()]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((t) => ({ ...t }));
+  }
+
   async createApiKey(input: CreateApiKeyInput): Promise<ApiKey> {
     const key: ApiKey = {
       id: randomUUID(),
@@ -85,6 +91,13 @@ export class InMemoryTenantRepository implements TenantRepository {
     if (!key) return null;
     key.active = active;
     return { ...key };
+  }
+
+  async listApiKeys(tenantId: string): Promise<ApiKey[]> {
+    return [...this.apiKeys.values()]
+      .filter((k) => k.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((k) => ({ ...k }));
   }
 
   async getSources(tenantId: string): Promise<Source[]> {
