@@ -20,10 +20,12 @@ config-change events so consumer caches invalidate promptly.
 | GET | `/tenants/:id/search-config` | Synonyms, boosts, facets, suggest settings |
 | GET | `/tenants/:id/sources` | Source definitions |
 
-### Admin writes (require admin credentials)
+### Admin reads / writes (require admin credentials)
 
 | Method | Path | Purpose |
 |---|---|---|
+| GET | `/tenants` | List tenants |
+| GET | `/tenants/:id/keys` | List API-key metadata (never the secret/hash) |
 | POST | `/tenants` | Create tenant (allocates immutable `prefix`) |
 | POST | `/tenants/:id/keys` | Issue an API key (secret returned once) |
 | DELETE | `/tenants/:id/keys/:keyId` | Revoke an API key |
@@ -72,20 +74,30 @@ See [`.env.example`](.env.example). Key variables:
 
 ## Local development
 
-Bring up infra (Postgres + Valkey) from the repo root, then run the service:
+Bring up **Postgres with a persistent Docker volume**, migrate, then run the service:
 
-```bash
-docker compose -f infra/docker-compose.yml up -d       # or `podman compose`
-
-cd services/tenant-config
-cp .env.example .env                                    # set ADMIN_TOKEN
-pnpm prisma migrate dev                                 # apply schema
-pnpm seed                                               # demo tenant + API key (printed once)
-pnpm start:dev
+```powershell
+# From repo root — starts es-postgres + applies Prisma migrations
+powershell -ExecutionPolicy Bypass -File scripts\pg-up.ps1
+# Optional demo tenant:
+powershell -ExecutionPolicy Bypass -File scripts\pg-up.ps1 -Seed
 ```
 
-No Postgres handy? Set `USE_IN_MEMORY=true` to boot against an in-memory store
-(data is lost on restart; intended for demos only).
+```bash
+cd services/tenant-config
+cp .env.example .env                                    # ADMIN_TOKEN + DATABASE_URL
+# DATABASE_URL already matches infra/docker-compose.yml
+pnpm start:dev                                          # default PORT=8000; stack uses 8001
+```
+
+Or let the full stack do it: `scripts\dev-up.ps1 -RealConfig` (S4 on :8001,
+`USE_IN_MEMORY=false`, gateway pointed at real config).
+
+`USE_IN_MEMORY=true` remains available for **unit/e2e tests and offline demos**
+only — data is lost on restart and is not the default for `-RealConfig`.
+
+Stop Postgres (keep data): `scripts\pg-down.ps1`  
+Wipe data: `scripts\pg-down.ps1 -Wipe`
 
 ## Security notes
 

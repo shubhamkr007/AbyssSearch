@@ -14,8 +14,9 @@ export class PrismaService
   private readonly logger = new Logger(PrismaService.name);
 
   async onModuleInit(): Promise<void> {
-    await this.$connect();
-    this.logger.log('connected to PostgreSQL');
+    // Lazy connect on first query so Nest can listen while Docker/WSL Postgres
+    // is still coming up. /readyz uses ping() and reports DB health.
+    this.logger.log('Prisma ready (lazy connect to PostgreSQL on first query)');
   }
 
   async onModuleDestroy(): Promise<void> {

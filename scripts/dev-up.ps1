@@ -5,11 +5,12 @@
 
   Services & ports:
     analysis-ml (embedding + NER) : 8000
-    tenant-config S4 (-RealConfig): 8001   (in-memory store; no Postgres needed)
+    tenant-config S4 (-RealConfig): 8001   (Postgres via Docker; persistent volume)
     search-service                : 8080
     api-gateway (BFF)             : 8081   <- point the widget's api-base here
     ingestion (orchestrator)      : 8090
     rag (-Rag)                    : 8092   (Answers tab; needs analysis-ml + optional Ollama)
+    postgres (-RealConfig)        : 5432   (Docker container, volume enterprise-search-pgdata)
 
   Elasticsearch is expected to already be running on :9200 (you run it natively).
 
@@ -19,10 +20,9 @@
   known-good low-resource mode.
 
 .PARAMETER RealConfig
-  Start the real S4 tenant/config service (in-memory store) on :8001 and point the
-  gateway at it (real API-key auth + per-tenant config) instead of the seeded fake
-  config. In-memory state is not persisted across restarts; provision tenants/keys
-  via the S4 admin API (see scripts\verify-gaps.ps1).
+  Start Postgres in Docker (persistent named volume), migrate the S4 schema, start
+  the real tenant/config service on :8001 with USE_IN_MEMORY=false, and point the
+  gateway at it. Tenants/API keys/tabs survive S4 and container restarts.
 
 .PARAMETER Rag
   Also start the RAG service (S12) on :8092 and enable the gateway's /v1/answers
@@ -33,17 +33,22 @@
 .PARAMETER Build
   Force a rebuild of the Node services before starting.
 
+.PARAMETER Seed
+  With -RealConfig, also seed the demo ACME tenant (prints an API key once).
+
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig
+  powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig -Seed
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -Rag
 #>
 param(
   [switch]$Embeddings,
   [switch]$RealConfig,
   [switch]$Rag,
-  [switch]$Build
+  [switch]$Build,
+  [switch]$Seed
 )
 
 $ErrorActionPreference = 'Stop'
@@ -56,6 +61,8 @@ $ingest    = Join-Path $root 'services\ingestion'
 $ragDir    = Join-Path $root 'services\rag'
 # RAG reuses the ingestion venv (identical deps: fastapi/httpx/elasticsearch/...).
 $ingestVenvPy = Join-Path $ingest '.venv\Scripts\python.exe'
+# 127.0.0.1 avoids Windows Node resolving localhost -> ::1 while Docker publishes IPv4 only.
+$dbUrl     = 'postgresql://tenant_config:tenant_config@127.0.0.1:5432/tenant_config?schema=public'
 
 function Test-Http([string]$Url) {
   try { Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 3 | Out-Null; return $true }
@@ -113,12 +120,25 @@ $pids += Start-Svc -Title 'es-analysis-ml' -WorkDir $analysis -EnvVars @{
 } -RunCmd "& '.\.venv\Scripts\python.exe' -m uvicorn app.main:app --port 8000"
 
 if ($RealConfig) {
-  Write-Host 'config        : real S4 on :8001 (in-memory store).' -ForegroundColor DarkGray
+  Write-Host 'config        : real S4 on :8001 (Postgres, persistent).' -ForegroundColor DarkGray
+  $pgUp = Join-Path $PSScriptRoot 'pg-up.ps1'
+  $pgArgs = @('-ExecutionPolicy', 'Bypass', '-File', $pgUp)
+  if ($Seed) { $pgArgs += '-Seed' }
+  & powershell.exe @pgArgs
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host 'Postgres/migrate failed - cannot start -RealConfig without a DB.' -ForegroundColor Red
+    exit 1
+  }
   $pids += Start-Svc -Title 'es-tenant-config' -WorkDir $tconf -EnvVars @{
-    PORT = '8001'; USE_IN_MEMORY = 'true'; ADMIN_TOKEN = 'dev-admin-token'; REDIS_URL = ''; LOG_LEVEL = 'info'
-  } -RunCmd 'node dist\main.js'
+    PORT = '8001'
+    USE_IN_MEMORY = 'false'
+    DATABASE_URL = $dbUrl
+    ADMIN_TOKEN = 'dev-admin-token'
+    REDIS_URL = ''
+    LOG_LEVEL = 'info'
+  } -RunCmd 'node --env-file=.env dist\main.js'
 } else {
-  Write-Host 'config        : seeded fake config (pass -RealConfig for real S4).' -ForegroundColor DarkGray
+  Write-Host 'config        : seeded fake config (pass -RealConfig for real S4 + Postgres).' -ForegroundColor DarkGray
 }
 
 $pids += Start-Svc -Title 'es-search' -WorkDir $search -EnvVars @{
@@ -161,7 +181,8 @@ $targets = @(
   @{ Name = 'analysis-ml'; Url = 'http://localhost:8000/healthz'; Timeout = 90 }
 )
 if ($RealConfig) {
-  $targets += @{ Name = 'tenant-config'; Url = 'http://localhost:8001/healthz'; Timeout = 30 }
+  # /readyz requires a live Postgres connection (not just process liveness).
+  $targets += @{ Name = 'tenant-config'; Url = 'http://localhost:8001/readyz'; Timeout = 45 }
 }
 $targets += @(
   @{ Name = 'search';      Url = 'http://localhost:8080/healthz'; Timeout = 30 },
@@ -186,7 +207,10 @@ foreach ($t in $targets) {
 Write-Host ''
 Write-Host 'Stack up. Endpoints:' -ForegroundColor Green
 Write-Host '  analysis-ml : http://localhost:8000/docs'
-if ($RealConfig) { Write-Host '  tenant-cfg  : http://localhost:8001        (real S4, admin token = dev-admin-token)' }
+if ($RealConfig) {
+  Write-Host '  tenant-cfg  : http://localhost:8001        (real S4 + Postgres, admin token = dev-admin-token)'
+  Write-Host '  postgres    : localhost:5432               (volume enterprise-search-pgdata)'
+}
 Write-Host '  search      : http://localhost:8080/healthz'
 Write-Host '  gateway     : http://localhost:8081        (widget api-base)'
 Write-Host '  ingestion   : http://localhost:8090/docs'
@@ -198,8 +222,10 @@ if ($Rag) {
   Write-Host ''
 }
 if ($RealConfig) {
-  Write-Host 'Real config is empty on start. Provision tenants + keys and verify hybrid/isolation:' -ForegroundColor Cyan
+  Write-Host 'S4 uses Postgres (data survives restarts). Manage tenants in the Admin Console or:' -ForegroundColor Cyan
   Write-Host '  powershell -ExecutionPolicy Bypass -File scripts\verify-gaps.ps1'
+  Write-Host '  pnpm --filter @enterprise-search/admin dev   # http://localhost:5174'
+  Write-Host 'Postgres stop (keep data): powershell -ExecutionPolicy Bypass -File scripts\pg-down.ps1'
 } else {
   Write-Host 'Demo search through the gateway (tenant key = pk_test_demo):' -ForegroundColor Cyan
   Write-Host '  curl -X POST http://localhost:8081/v1/search -H "Authorization: Bearer pk_test_demo" -H "Content-Type: application/json" -d "{\"query\":\"security\"}"'

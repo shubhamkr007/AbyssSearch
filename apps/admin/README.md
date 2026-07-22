@@ -9,14 +9,14 @@ A browser SPA (React + Vite + TanStack Query) for administering the search platf
 ## Run
 
 ```powershell
-# Backend (real config service, in-memory store) + hybrid search
+# Backend (real S4 on Postgres + hybrid search). Tenants/keys survive restarts.
 powershell -ExecutionPolicy Bypass -File ..\..\scripts\dev-up.ps1 -Embeddings -RealConfig
 
 # Console dev server -> http://localhost:5174
 pnpm --filter @enterprise-search/admin dev
 ```
 
-Open http://localhost:5174 and check **Settings**: the API bases and the **admin token** (dev default `dev-admin-token`). Settings persist in this browser only (localStorage); no secrets are sent anywhere except the services you configure.
+Open http://localhost:5174 and check **Settings**: the API bases and the **admin token** (dev default `dev-admin-token`). Settings persist in this browser only (localStorage); no secrets are sent anywhere except the services you configure. S4 itself stores tenants/keys in the Docker Postgres volume `enterprise-search-pgdata`.
 
 ## Screens
 

@@ -38,3 +38,7 @@ Thumbs.db
 
 # Local dev stack runtime state
 scripts/.dev-pids.json
+scripts/.wsl-keepalive.pid
+s4-start.log
+s4-verify*.log
+services/tenant-config/s4-verify*.log

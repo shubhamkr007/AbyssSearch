@@ -11,7 +11,7 @@ Everything in this stack is **open-source / zero license cost**.
 | **Widget (S1)** | `<enterprise-search>` Web Component (React + Vite + shadow DOM) |
 | **Gateway (S2)** | NestJS BFF — auth, rate limits, `/v1/search`, `/v1/answers`, … |
 | **Search (S3)** | NestJS — BM25 + kNN, client-side RRF, suggest, did-you-mean, facets |
-| **Config (S4)** | NestJS + Prisma — tenants, API keys, tabs (in-memory or Postgres) |
+| **Config (S4)** | NestJS + Prisma — tenants, API keys, tabs (Postgres; in-memory only for tests) |
 | **Ingestion (S5/S6)** | FastAPI + Celery-ready — ingest, enrich, `ANALYZE` (NER) jobs |
 | **Analysis-ML (S8/S9)** | FastAPI — embeddings (`bge-small-en-v1.5`) + NER (spaCy) |
 | **RAG (S12)** | FastAPI — hybrid retrieve + grounded answers with citations |
@@ -47,13 +47,18 @@ http://localhost:5173/?api=http://localhost:8081&key=pk_test_demo
 
 Without `?api=` / `?key=` the widget uses offline demo data.
 
-### Admin Console (S11)
+### Admin Console (S11) + persistent S4 (Postgres)
 
 The admin console is a browser SPA for onboarding tenants, issuing API keys, configuring tabs/sources/relevance, running ingest + NER jobs, and previewing search — all against the running backend.
 
+`-RealConfig` starts **Postgres in Docker** (named volume `enterprise-search-pgdata`) so tenants and API keys survive restarts. On Windows, Docker Engine inside WSL is used automatically if `docker.exe` is not on PATH.
+
 ```powershell
-# Start the backend with the real tenant/config service (in-memory store)
+# Backend with real S4 + persistent Postgres (+ optional -Seed for demo ACME tenant)
 powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig
+
+# Or Postgres alone:
+powershell -ExecutionPolicy Bypass -File scripts\pg-up.ps1
 
 # Start the console (http://localhost:5174)
 pnpm --filter @enterprise-search/admin dev
@@ -75,7 +80,8 @@ More flags and details: [`scripts/README.md`](scripts/README.md)
 | Service | Port | Notes |
 |---|---|---|
 | analysis-ml | 8000 | `/docs` — embed + NER |
-| tenant-config (optional `-RealConfig`) | 8001 | in-memory S4 |
+| tenant-config (optional `-RealConfig`) | 8001 | Postgres-backed S4 |
+| postgres (`pg-up` / `-RealConfig`) | 5432 | Docker volume `enterprise-search-pgdata` |
 | search-service | 8080 | hybrid retrieval |
 | **api-gateway** | **8081** | widget `api-base` |
 | ingestion | 8090 | `/docs` — ingest + analyze |

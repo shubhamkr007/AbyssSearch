@@ -1,19 +1,27 @@
 # Local development infrastructure for the Enterprise Search platform.
-# Brings up Postgres, Valkey, and Elasticsearch for S4/S3/S5 local runs.
+# Brings up Postgres (persistent), optional Valkey, and optional Elasticsearch.
 #
 # Note (Windows/macOS, zero-cost): run with Podman Desktop, Rancher Desktop, or
 # Docker Engine on WSL2 to avoid Docker Desktop licensing. All commands below
-# work with `docker compose` or `podman compose`.
+# work with `docker compose` or `podman compose`. On Windows without a native
+# docker.exe, the PowerShell scripts use `wsl docker ...` automatically.
 #
+# Postgres only (recommended for S4 persistence — keeps the named volume):
+#   powershell -ExecutionPolicy Bypass -File scripts\pg-up.ps1
+#   # or:
+#   docker compose -f infra/docker-compose.yml up -d postgres
+#
+# Full infra:
 #   docker compose -f infra/docker-compose.yml up -d
 #
-# Tenant/Config (S4):
-#   pnpm --filter @enterprise-search/tenant-config prisma:migrate
+# Tenant/Config (S4) against Postgres:
+#   pnpm --filter @enterprise-search/tenant-config prisma:deploy
 #   pnpm --filter @enterprise-search/tenant-config seed
 #   pnpm --filter @enterprise-search/tenant-config start:dev
 #
-# Ingestion (S5/S6) against this stack (or USE_FAKE=true with no containers):
-#   cd services/ingestion && uvicorn app.main:app --reload --port 8090
+# Data survives container restarts/removes via the named volume
+# `enterprise-search-pgdata`. Only `docker compose down -v` (or pg-down -Wipe)
+# deletes it.
 
 name: enterprise-search
 
@@ -21,6 +29,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: es-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: tenant_config
       POSTGRES_PASSWORD: tenant_config
@@ -28,16 +37,19 @@ services:
     ports:
       - "5432:5432"
     volumes:
+      # Named volume = persistent storage for tenants / API keys / tabs / sources.
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tenant_config -d tenant_config"]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 10s
 
   valkey:
     image: valkey/valkey:8-alpine
     container_name: es-valkey
+    restart: unless-stopped
     command: ["valkey-server", "--save", "", "--appendonly", "no"]
     ports:
       - "6379:6379"
@@ -46,13 +58,17 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    profiles: ["full"]
 
   # Elasticsearch (free Basic tier). Security is DISABLED here for frictionless
   # local dev (no TLS/API keys); production enables xpack.security + TLS and the
   # Search Service authenticates with a least-privilege API key.
+  # Opt-in via profile so `up -d postgres` never pulls a second ES if you already
+  # run Elasticsearch natively on :9200.
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
     container_name: es-elasticsearch
+    restart: unless-stopped
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
@@ -68,7 +84,10 @@ services:
       timeout: 5s
       retries: 12
       start_period: 40s
+    profiles: ["full"]
 
 volumes:
   pgdata:
+    name: enterprise-search-pgdata
   esdata:
+    name: enterprise-search-esdata
