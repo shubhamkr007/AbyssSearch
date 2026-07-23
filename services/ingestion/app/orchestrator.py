@@ -10,9 +10,11 @@ from app.config import Settings
 from app.domain import DeadLetterRecord, JobRecord, TaskRecord, new_id, utcnow
 from app.pipeline.entities import group_entities
 from app.pipeline.runner import run_pipeline
+from app.pipeline.suggest_terms import count_terms_from_titles
 from app.repository import JobRepository
 from app.schemas import (
     AnalyzeJobRequest,
+    BuildSuggestJobRequest,
     BulkDocumentsRequest,
     BulkIndexResponse,
     DeadLetterView,
@@ -127,6 +129,40 @@ class Orchestrator:
 
         # Analyze runs inline for the MVP (the Celery worker only routes pipeline tasks).
         self.run_analyze_task(job.id, task.id)
+
+        refreshed = self.repo.get_job(job.id)
+        assert refreshed is not None
+        return JobCreatedResponse(
+            jobId=refreshed.id,
+            status=refreshed.status,
+            taskCount=1,
+        )
+
+    def start_build_suggest(self, req: BuildSuggestJobRequest) -> JobCreatedResponse:
+        """Rebuild `auto_complete-{prefix}` terms from titles already in ES."""
+        prefix = req.tenant_prefix or req.tenant_id
+        job = JobRecord(
+            id=new_id("job_"),
+            tenant_id=req.tenant_id,
+            tenant_prefix=prefix,
+            source_id=req.source,
+            type=JobType.BUILD_SUGGEST.value,
+            status=JobStatus.QUEUED.value,
+            counts={"total": 0, "ok": 0, "failed": 0, "skipped": 0},
+            options={"limit": req.limit},
+            payload={"source": req.source, "limit": req.limit},
+        )
+        self.repo.create_job(job)
+
+        task = TaskRecord(
+            id=new_id("task_"),
+            job_id=job.id,
+            kind=TaskKind.BUILD_SUGGEST.value,
+            status=TaskStatus.QUEUED.value,
+            payload={"source": req.source, "limit": req.limit},
+        )
+        self.repo.create_task(task)
+        self.run_build_suggest_task(job.id, task.id)
 
         refreshed = self.repo.get_job(job.id)
         assert refreshed is not None
@@ -348,6 +384,80 @@ class Orchestrator:
                         "tenant_id": job.tenant_id,
                         "tenant_prefix": job.tenant_prefix,
                         "analyze": task.payload,
+                    },
+                    error=str(exc),
+                )
+            )
+
+        self._finalize_job(job_id)
+
+    def run_build_suggest_task(self, job_id: str, task_id: str) -> None:
+        """Scan content indices and rebuild word autocomplete terms from titles."""
+        job = self.repo.get_job(job_id)
+        task = self.repo.get_task(task_id)
+        if not job or not task:
+            return
+
+        task.status = TaskStatus.RUNNING.value
+        task.attempts += 1
+        task.updated_at = utcnow()
+        self.repo.update_task(task)
+
+        job.status = JobStatus.RUNNING.value
+        self.repo.update_job(job)
+
+        try:
+            source = task.payload.get("source")
+            limit = int(task.payload.get("limit") or 5000)
+            index = f"{job.tenant_prefix}-{source}" if source else f"{job.tenant_prefix}-*"
+
+            targets = self.indexer.search_documents(
+                index,
+                tenant_id=job.tenant_id,
+                limit=limit,
+            )
+            # Deduplicate by parent: prefer chunk_index 0 titles; titles already
+            # include "(part N)" for later chunks — count_terms strips that suffix.
+            titles = [t.get("title") if isinstance(t.get("title"), str) else None for t in targets]
+            counts = count_terms_from_titles(titles)
+            # Prefix is what the Search Service filters on (gateway sends prefix as tenant).
+            terms_written = self.indexer.upsert_autocomplete_terms(
+                job.tenant_prefix, job.tenant_prefix, dict(counts)
+            )
+
+            task.status = TaskStatus.SUCCEEDED.value
+            task.error = None
+            task.payload = {
+                **task.payload,
+                "result": {
+                    "docs_scanned": len(targets),
+                    "unique_terms": len(counts),
+                    "terms_written": terms_written,
+                },
+            }
+            task.updated_at = utcnow()
+            self.repo.update_task(task)
+
+            job.counts = {
+                "total": len(targets),
+                "ok": terms_written,
+                "failed": 0,
+                "skipped": 0,
+            }
+            self.repo.update_job(job)
+        except Exception as exc:  # noqa: BLE001
+            task.status = TaskStatus.FAILED.value
+            task.error = str(exc)
+            task.updated_at = utcnow()
+            self.repo.update_task(task)
+            self.repo.add_dead_letter(
+                DeadLetterRecord(
+                    id=new_id("dl_"),
+                    task_id=task.id,
+                    payload={
+                        "tenant_id": job.tenant_id,
+                        "tenant_prefix": job.tenant_prefix,
+                        "build_suggest": task.payload,
                     },
                     error=str(exc),
                 )

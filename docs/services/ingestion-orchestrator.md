@@ -33,7 +33,7 @@ flowchart LR
 |---|---|---|
 | POST | `/jobs/ingest` | Start ingestion (source id or inline payload); returns `jobId` |
 | POST | `/jobs/reindex` | Rebuild an index version and swap the alias |
-| POST | `/jobs/build-suggest` | Rebuild suggestion/completion data |
+| POST | `/jobs/build-suggest` | Rebuild word autocomplete terms from titles into `auto_complete-{prefix}` |
 | POST | `/jobs/analyze` | Re-run enrichment over existing docs |
 | GET | `/jobs/{id}` | Job status + per-task breakdown |
 | GET | `/jobs` | List/filter jobs by tenant/status |

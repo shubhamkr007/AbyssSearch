@@ -14,8 +14,8 @@ Analysis/ML service (S8); if that is unavailable the service **degrades to BM25-
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/search` | Hybrid search: facets, filters, paging, highlighting, did-you-mean |
-| GET | `/suggest` | As-you-type suggestions (`search_as_you_type` on `title`) |
-| GET | `/autocomplete` | Prefix completions (MVP shares the suggest path) |
+| GET | `/suggest` | Word-by-word autocomplete from `auto_complete-{tenant}` (edge ngrams); title fallback if empty |
+| GET | `/autocomplete` | Same as `/suggest` |
 | POST | `/did-you-mean` | Spelling correction (`phrase` suggester) |
 | GET | `/healthz` · `/readyz` | Liveness · readiness (pings Elasticsearch) |
 | GET | `/metrics` | Prometheus metrics |

@@ -11,6 +11,7 @@ from app.metrics import (
 from app.orchestrator import Orchestrator
 from app.schemas import (
     AnalyzeJobRequest,
+    BuildSuggestJobRequest,
     BulkDocumentsRequest,
     BulkIndexResponse,
     DeadLetterView,
@@ -63,6 +64,26 @@ def create_analyze_job(
     if job and job.status in ("succeeded", "partial", "failed"):
         JOBS_FINISHED.labels(status=job.status).inc()
         DOCS_ANALYZED.inc(job.counts.ok)
+    return result
+
+
+@router.post(
+    "/jobs/build-suggest",
+    response_model=JobCreatedResponse,
+    dependencies=[Depends(require_admin)],
+)
+def create_build_suggest_job(
+    body: BuildSuggestJobRequest,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> JobCreatedResponse:
+    try:
+        result = orch.start_build_suggest(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    JOBS_CREATED.labels(type="build-suggest").inc()
+    job = orch.get_job(result.job_id)
+    if job and job.status in ("succeeded", "partial", "failed"):
+        JOBS_FINISHED.labels(status=job.status).inc()
     return result
 
 

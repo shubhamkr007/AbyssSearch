@@ -124,10 +124,26 @@ describe('SearchService.search', () => {
 });
 
 describe('SearchService.suggest / didYouMean', () => {
-  it('returns de-duplicated title suggestions', async () => {
+  it('returns word suggestions from the autocomplete index', async () => {
     const { backend, service } = build();
+    backend.autocomplete = {
+      total: 2,
+      hits: [
+        hit('1', { term: 'india', weight: 3 }),
+        hit('2', { term: 'indonesia', weight: 1 }),
+        hit('3', { term: 'india', weight: 3 }),
+      ],
+    };
+    const res = await service.suggest({ tenant: 'acme', q: 'ind' });
+    expect(res.suggestions).toEqual(['india', 'indonesia']);
+    expect(backend.calls[0].index).toBe('auto_complete-acme');
+  });
+
+  it('falls back to title suggestions when autocomplete is empty', async () => {
+    const { backend, service } = build();
+    backend.autocomplete = { total: 0, hits: [] };
     backend.suggest = {
-      total: 3,
+      total: 2,
       hits: [
         hit('1', { title: 'How to reset password' }),
         hit('2', { title: 'Reset password FAQ' }),
@@ -136,6 +152,17 @@ describe('SearchService.suggest / didYouMean', () => {
     };
     const res = await service.suggest({ tenant: 'acme', q: 'reset' });
     expect(res.suggestions).toEqual(['How to reset password', 'Reset password FAQ']);
+  });
+
+  it('falls back to title suggestions when autocomplete index fails', async () => {
+    const { backend, service } = build();
+    backend.failOn = 'autocomplete';
+    backend.suggest = {
+      total: 1,
+      hits: [hit('1', { title: 'India Handbook' })],
+    };
+    const res = await service.suggest({ tenant: 'acme', q: 'ind' });
+    expect(res.suggestions).toEqual(['India Handbook']);
   });
 
   it('returns a correction from the phrase suggester', async () => {

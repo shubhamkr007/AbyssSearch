@@ -13,6 +13,8 @@ export class FakeSearchBackend implements SearchBackend {
   knn: EsSearchResult = EMPTY;
   native: EsSearchResult = EMPTY;
   suggest: EsSearchResult = EMPTY;
+  /** Word autocomplete hits from `auto_complete-{prefix}` (source.term). */
+  autocomplete: EsSearchResult = EMPTY;
   didYouMean: EsSearchResult = EMPTY;
 
   /** Set to a body-keyword ('knn' | 'aggs' | ...) to throw on that leg (simulate ES failure). */
@@ -23,6 +25,10 @@ export class FakeSearchBackend implements SearchBackend {
   async search(index: string, body: JsonObject): Promise<EsSearchResult> {
     this.calls.push({ index, body });
 
+    if (index.startsWith('auto_complete-')) {
+      if (this.failOn === 'autocomplete') throw new Error('fake autocomplete failure');
+      return clone(this.autocomplete);
+    }
     if ('knn' in body) {
       if (this.failOn === 'knn') throw new Error('fake knn failure');
       return clone(this.knn);

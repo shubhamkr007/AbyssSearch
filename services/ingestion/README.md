@@ -9,6 +9,8 @@ the same pipeline code; for local/dev/`USE_FAKE` the pipeline runs **inline** (n
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/jobs/ingest` | Start ingest job (inline documents in MVP) |
+| POST | `/jobs/analyze` | Post-index NER enrichment |
+| POST | `/jobs/build-suggest` | Rebuild word autocomplete terms from titles → `auto_complete-{prefix}` |
 | GET | `/jobs/{id}` | Job status + tasks |
 | GET | `/jobs` | List jobs (`tenantId`, `status`) |
 | POST | `/documents:bulk` | Direct bulk upsert (small batches) |
@@ -41,7 +43,9 @@ curl -s localhost:8090/jobs/ingest \
 ```
 
 Documents land in alias `{tenantPrefix}-{source}` (e.g. `acme-document`), with idempotent
-ids `sha1(tenant+source+natural_key)`.
+ids `sha1(tenant+source+natural_key)`. On ingest, title words are also upserted into
+`auto_complete-{prefix}` (edge-ngrammed) so typing `ind` suggests `india`. Rebuild with
+`POST /jobs/build-suggest` for already-indexed docs.
 
 ## Pipeline
 

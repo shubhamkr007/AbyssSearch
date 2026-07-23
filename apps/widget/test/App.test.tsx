@@ -32,8 +32,9 @@ describe('<enterprise-search> search flow', () => {
     const { emit } = renderWidget(<SearchApp tabOverride={null} />);
     await user.type(screen.getByRole('combobox'), 'kuber');
 
+    // Word-by-word autocomplete suggests the token, not the full document title.
     const option = await screen.findByRole('option', {
-      name: /Kubernetes Production Runbook/i,
+      name: /^kubernetes$/i,
     });
     await user.click(option);
 
@@ -41,7 +42,7 @@ describe('<enterprise-search> search flow', () => {
       await screen.findByRole('link', { name: 'Kubernetes Production Runbook' }),
     ).toBeInTheDocument();
     expect(emit).toHaveBeenCalledWith('suggestselect', {
-      suggestion: 'Kubernetes Production Runbook',
+      suggestion: 'kubernetes',
     });
   });
 
@@ -134,9 +135,8 @@ describe('<enterprise-search> search flow', () => {
     await user.keyboard('{Enter}');
 
     expect(await screen.findByText('People also search')).toBeInTheDocument();
-    expect(
-      await screen.findByRole('button', { name: /Acme launches new security platform/i }),
-    ).toBeInTheDocument();
+    // Related suggestions are words co-occurring with the query (not full titles).
+    expect(await screen.findByRole('button', { name: 'security' })).toBeInTheDocument();
   });
 
   it('emits a human-in-the-loop feedback event', async () => {

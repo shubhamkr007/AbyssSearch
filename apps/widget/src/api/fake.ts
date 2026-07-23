@@ -340,12 +340,27 @@ export class FakeApiClient implements ApiClient {
     const size = params.size ?? 8;
     if (q.length === 0) return { query: params.q, suggestions: [] };
 
-    const titles = DOCS.map((d) => d.title);
-    const pool = uniq([...titles, ...VOCAB]);
-    const starts = pool.filter((s) => s.toLowerCase().startsWith(q));
-    const contains = pool.filter(
-      (s) => !s.toLowerCase().startsWith(q) && s.toLowerCase().includes(q),
+    // Word-by-word autocomplete: suggest vocabulary tokens that start with the
+    // typed prefix (mirrors the auto_complete-{prefix} edge-ngram index).
+    const words = uniq([...VOCAB, ...DOCS.flatMap((d) => tokenize(d.title))]).filter(
+      (w) => w.length >= 2,
     );
-    return { query: params.q, suggestions: [...starts, ...contains].slice(0, size) };
+    const starts = words.filter((w) => w.startsWith(q));
+    // Co-occurring title tokens from matching docs (powers "People also search").
+    const related = uniq(
+      DOCS.filter(
+        (d) =>
+          d.title.toLowerCase().includes(q) ||
+          d.body.toLowerCase().includes(q) ||
+          d.tags.some((t) => t.includes(q)),
+      ).flatMap((d) => tokenize(d.title)),
+    ).filter((w) => w !== q && !starts.includes(w));
+    const contains = words.filter(
+      (w) => !w.startsWith(q) && w.includes(q) && !related.includes(w),
+    );
+    return {
+      query: params.q,
+      suggestions: [...starts, ...related, ...contains].slice(0, size),
+    };
   }
 }

@@ -1,11 +1,13 @@
 import {
   type BuilderConfig,
+  buildAutocompleteBody,
   buildBm25Body,
   buildDidYouMeanBody,
   buildKnnBody,
   buildNativeRrfBody,
   buildSuggestBody,
   filterClauses,
+  resolveAutocompleteIndex,
   resolveIndex,
   type SearchParams,
 } from './query-builder';
@@ -47,6 +49,13 @@ describe('resolveIndex', () => {
     expect(resolveIndex('acme', 'all', cfg.tabSourceMap, ['document', 'news'])).toBe(
       'acme-document,acme-news',
     );
+  });
+});
+
+describe('resolveAutocompleteIndex', () => {
+  it('uses auto_complete-{prefix} so it is outside the content wildcard', () => {
+    expect(resolveAutocompleteIndex('demo')).toBe('auto_complete-demo');
+    expect(resolveAutocompleteIndex('acme')).not.toMatch(/^acme-/);
   });
 });
 
@@ -112,6 +121,17 @@ describe('buildSuggestBody', () => {
     expect(body.query.bool.must[0].multi_match.type).toBe('bool_prefix');
     expect(body.query.bool.must[0].multi_match.fields).toContain('title.suggest');
     expect(body.query.bool.filter).toContainEqual({ term: { tenant_id: 'acme' } });
+  });
+});
+
+describe('buildAutocompleteBody', () => {
+  it('matches the edge-ngram prefix field and sorts by weight', () => {
+    const body = buildAutocompleteBody('ind', 'acme', 8) as any;
+    expect(body.size).toBe(8);
+    expect(body.query.bool.must[0]).toEqual({ match: { prefix: 'ind' } });
+    expect(body.query.bool.filter).toContainEqual({ term: { tenant_id: 'acme' } });
+    expect(body.sort[0]).toEqual({ weight: { order: 'desc' } });
+    expect(body._source).toEqual(['term', 'weight']);
   });
 });
 

@@ -44,13 +44,14 @@ def create_app() -> FastAPI:
     app.include_router(router)
 
     # Admin Console (S11) posts ingest/analyze jobs from the browser.
+    # Must allow x-admin-actor (admin client always sends it) or OPTIONS preflight → 400.
     origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins or ["*"],
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
-        allow_headers=["authorization", "content-type"],
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["authorization", "content-type", "x-admin-actor", "x-admin-token"],
         max_age=600,
     )
 

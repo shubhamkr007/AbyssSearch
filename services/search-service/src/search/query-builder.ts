@@ -48,6 +48,14 @@ export function resolveIndex(
   return `${tenant}-${sourceType}`;
 }
 
+/**
+ * Word autocomplete index. Named `auto_complete-{prefix}` so it is NOT matched
+ * by the content-search `{prefix}-*` wildcard.
+ */
+export function resolveAutocompleteIndex(tenantPrefix: string): string {
+  return `auto_complete-${tenantPrefix}`;
+}
+
 /** Mandatory tenant_id filter (defense-in-depth) plus any user-supplied facet filters. */
 export function filterClauses(
   tenantId: string,
@@ -198,6 +206,25 @@ export function buildSuggestBody(
         filter: filterClauses(tenantId, filters),
       },
     },
+  };
+}
+
+/**
+ * Word-by-word autocomplete against `auto_complete-{prefix}`.
+ * The `prefix` field is edge-ngram indexed (i, in, ind, indi, india) with a
+ * keyword search analyzer so typing `ind` matches the term `india`.
+ */
+export function buildAutocompleteBody(q: string, tenantId: string, size: number): JsonObject {
+  return {
+    size,
+    _source: ['term', 'weight'],
+    query: {
+      bool: {
+        must: [{ match: { prefix: q } }],
+        filter: [{ term: { tenant_id: tenantId } }],
+      },
+    },
+    sort: [{ weight: { order: 'desc' } }, { term: { order: 'asc' } }],
   };
 }
 

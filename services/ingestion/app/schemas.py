@@ -29,6 +29,7 @@ class TaskKind(str, Enum):
     THUMBNAIL = "thumbnail"
     PIPELINE = "pipeline"  # MVP: one task runs the full per-batch pipeline
     ANALYZE = "analyze"  # post-index NER enrichment of docs already in ES
+    BUILD_SUGGEST = "build-suggest"  # rebuild word autocomplete terms from titles
 
 
 class TaskStatus(str, Enum):
@@ -114,6 +115,29 @@ class AnalyzeJobRequest(BaseModel):
         ge=1,
         le=10000,
         description="Max docs to scan when docIds is empty.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class BuildSuggestJobRequest(BaseModel):
+    """Rebuild word autocomplete terms from titles already indexed in ES."""
+
+    tenant_id: str = Field(..., min_length=1, max_length=64, alias="tenantId")
+    tenant_prefix: str | None = Field(
+        default=None,
+        alias="tenantPrefix",
+        description="ES index prefix; defaults to tenantId when omitted.",
+    )
+    source: str | None = Field(
+        default=None,
+        description="Source type (e.g. 'document'). Omit to scan every source index for the tenant.",
+    )
+    limit: int = Field(
+        default=5000,
+        ge=1,
+        le=20000,
+        description="Max docs to scan when rebuilding suggest terms.",
     )
 
     model_config = {"populate_by_name": True}

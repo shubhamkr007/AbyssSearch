@@ -22,11 +22,13 @@ import { SEARCH_BACKEND, type SearchBackend } from './backend';
 import type { DidYouMeanDto, SearchDto, SuggestDto } from './dto';
 import {
   type BuilderConfig,
+  buildAutocompleteBody,
   buildBm25Body,
   buildDidYouMeanBody,
   buildKnnBody,
   buildNativeRrfBody,
   buildSuggestBody,
+  resolveAutocompleteIndex,
   resolveIndex,
   type SearchParams,
 } from './query-builder';
@@ -150,14 +152,12 @@ export class SearchService {
 
   async suggest(dto: SuggestDto): Promise<SuggestResponse> {
     this.metrics?.suggestRequests.inc({ kind: 'suggest' });
-    return this.suggestTitles(dto);
+    return this.suggestWords(dto);
   }
 
   async autocomplete(dto: SuggestDto): Promise<SuggestResponse> {
-    // MVP: autocomplete shares the search_as_you_type path. A dedicated
-    // `completion` suggester seeded from analytics is a Phase-2 enhancement.
     this.metrics?.suggestRequests.inc({ kind: 'autocomplete' });
-    return this.suggestTitles(dto);
+    return this.suggestWords(dto);
   }
 
   async didYouMean(dto: DidYouMeanDto): Promise<DidYouMeanResponse> {
@@ -249,6 +249,40 @@ export class SearchService {
   }
 
   // ---- helpers -----------------------------------------------------------
+
+  /**
+   * Word-by-word suggestions from `auto_complete-{prefix}`. Falls back to
+   * title-based `search_as_you_type` when the autocomplete index is empty or
+   * unavailable (e.g. tenant not yet backfilled).
+   */
+  private async suggestWords(dto: SuggestDto): Promise<SuggestResponse> {
+    const tenantId = dto.tenantId ?? dto.tenant;
+    const size = clamp(dto.size ?? 8, 1, 25);
+    const q = (dto.q ?? '').trim();
+    if (!q) {
+      return { query: dto.q, suggestions: [] };
+    }
+
+    try {
+      const index = resolveAutocompleteIndex(dto.tenant);
+      const res = await this.backend.search(index, buildAutocompleteBody(q, tenantId, size));
+      const seen = new Set<string>();
+      const suggestions: string[] = [];
+      for (const hit of res.hits) {
+        const term = (hit.source as { term?: unknown }).term;
+        if (typeof term === 'string' && term && !seen.has(term)) {
+          seen.add(term);
+          suggestions.push(term);
+        }
+      }
+      if (suggestions.length > 0) {
+        return { query: dto.q, suggestions };
+      }
+    } catch {
+      // fall through to title suggest
+    }
+    return this.suggestTitles(dto);
+  }
 
   private async suggestTitles(dto: SuggestDto): Promise<SuggestResponse> {
     const tenantId = dto.tenantId ?? dto.tenant;

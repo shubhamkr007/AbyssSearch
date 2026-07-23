@@ -25,6 +25,13 @@ describe('Search API (e2e, fake backend)', () => {
       facets: { tags: [{ value: 'billing', count: 1 }] },
     };
     backend.knn = { total: 1, hits: [{ id: 'b', score: 0, source: {} }] };
+    backend.autocomplete = {
+      total: 2,
+      hits: [
+        { id: '1', score: 0, source: { term: 'reset', weight: 5 } },
+        { id: '2', score: 0, source: { term: 'password', weight: 3 } },
+      ],
+    };
     backend.suggest = {
       total: 1,
       hits: [{ id: '1', score: 0, source: { title: 'reset password' } }],
@@ -68,12 +75,13 @@ describe('Search API (e2e, fake backend)', () => {
     await request(app.getHttpServer()).post('/search').send({ tab: 'all' }).expect(400);
   });
 
-  it('GET /suggest returns title suggestions', async () => {
+  it('GET /suggest returns word suggestions from autocomplete', async () => {
     const res = await request(app.getHttpServer())
       .get('/suggest')
-      .query({ tenant: 'acme', q: 'reset' })
+      .query({ tenant: 'acme', q: 'res' })
       .expect(200);
-    expect(res.body.suggestions).toContain('reset password');
+    expect(res.body.suggestions).toContain('reset');
+    expect(res.body.suggestions).toContain('password');
   });
 
   it('POST /did-you-mean returns a correction', async () => {

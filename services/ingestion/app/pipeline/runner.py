@@ -10,6 +10,7 @@ from app.clients.indexer import IndexBackend, resolve_alias
 from app.pipeline.entities import group_entities
 from app.pipeline.ids import document_id
 from app.pipeline.normalize import chunk_text
+from app.pipeline.suggest_terms import count_terms_from_titles
 from app.schemas import InlineDocument
 
 
@@ -122,6 +123,34 @@ def index_docs(
     return total_ok, total_failed, all_ids, last_index
 
 
+def upsert_suggest_terms(
+    docs: list[dict[str, Any]],
+    indexer: IndexBackend,
+    *,
+    tenant_id: str,
+    tenant_prefix: str,
+) -> int:
+    """Extract title words and upsert them into `auto_complete-{prefix}`."""
+    # Prefer the parent chunk (chunk_index == 0) so we don't double-count
+    # "(part N)" titles; fall back to every title if chunks lack the field.
+    titles: list[str | None] = []
+    seen_parents: set[str] = set()
+    for d in docs:
+        parent = str(d.get("parent_id") or d.get("id") or "")
+        chunk_idx = d.get("chunk_index")
+        if parent and parent in seen_parents:
+            continue
+        if chunk_idx is not None and int(chunk_idx) != 0:
+            continue
+        if parent:
+            seen_parents.add(parent)
+        titles.append(d.get("title") if isinstance(d.get("title"), str) else None)
+    counts = count_terms_from_titles(titles)
+    if not counts:
+        return 0
+    return indexer.upsert_autocomplete_terms(tenant_prefix, tenant_id, dict(counts))
+
+
 def run_pipeline(
     *,
     tenant_id: str,
@@ -148,10 +177,21 @@ def run_pipeline(
     ok, failed, ids, index = index_docs(
         enriched, indexer, tenant_prefix, ensure_index=ensure_index
     )
+    # Best-effort: never fail the ingest because suggest terms couldn't write.
+    suggest_terms = 0
+    try:
+        # Store tenant_id as the index PREFIX — the Search Service / gateway
+        # always filter autocomplete (and content) by prefix, not the UUID id.
+        suggest_terms = upsert_suggest_terms(
+            enriched, indexer, tenant_id=tenant_prefix, tenant_prefix=tenant_prefix
+        )
+    except Exception:
+        suggest_terms = 0
     return {
         "ok": ok,
         "failed": failed,
         "ids": ids,
         "index": index,
         "doc_count": len(enriched),
+        "suggest_terms": suggest_terms,
     }

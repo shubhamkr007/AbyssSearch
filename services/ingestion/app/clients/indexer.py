@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any, Protocol
+
+from app.pipeline.suggest_terms import term_doc_id
 
 INDEX_TEMPLATE_NAME = "enterprise-search-documents"
 INDEX_TEMPLATE_PATTERN = "*-document*"
@@ -55,6 +58,49 @@ DOCUMENT_SETTINGS: dict[str, Any] = {
     }
 }
 
+# Dedicated word-suggest indices live OUTSIDE `{prefix}-*` so content search
+# never returns term documents. Named `auto_complete-{prefix}` (like analytics).
+AUTOCOMPLETE_SETTINGS: dict[str, Any] = {
+    "analysis": {
+        "analyzer": {
+            "ac_edge_ngram": {
+                "tokenizer": "ac_edge_ngram_tokenizer",
+                "filter": ["lowercase"],
+            },
+            "ac_search": {
+                "tokenizer": "keyword",
+                "filter": ["lowercase"],
+            },
+        },
+        "tokenizer": {
+            "ac_edge_ngram_tokenizer": {
+                "type": "edge_ngram",
+                "min_gram": 1,
+                "max_gram": 20,
+                "token_chars": ["letter", "digit"],
+            }
+        },
+    }
+}
+
+AUTOCOMPLETE_MAPPINGS: dict[str, Any] = {
+    "properties": {
+        "tenant_id": {"type": "keyword"},
+        "term": {"type": "keyword"},
+        "prefix": {
+            "type": "text",
+            "analyzer": "ac_edge_ngram",
+            "search_analyzer": "ac_search",
+        },
+        "weight": {"type": "integer"},
+        "updated_at": {"type": "date"},
+    }
+}
+
+
+def resolve_autocomplete_index(tenant_prefix: str) -> str:
+    return f"auto_complete-{tenant_prefix}"
+
 
 class IndexBackend(Protocol):
     def ensure_index(self, alias: str, dims: int = 384) -> None: ...
@@ -69,6 +115,10 @@ class IndexBackend(Protocol):
     ) -> list[dict[str, Any]]: ...
     def update_document(self, index: str, doc_id: str, doc: dict[str, Any]) -> bool: ...
     def ensure_analysis_fields(self, index: str) -> None: ...
+    def ensure_autocomplete_index(self, tenant_prefix: str) -> None: ...
+    def upsert_autocomplete_terms(
+        self, tenant_prefix: str, tenant_id: str, term_counts: dict[str, int]
+    ) -> int: ...
     def ping(self) -> bool: ...
 
 
@@ -76,9 +126,42 @@ class FakeIndexBackend:
     def __init__(self) -> None:
         self.docs: dict[str, dict[str, Any]] = {}  # id -> doc
         self.indices: set[str] = set()
+        # autocomplete: index -> doc_id -> doc
+        self.suggest_docs: dict[str, dict[str, dict[str, Any]]] = {}
 
     def ensure_index(self, alias: str, dims: int = 384) -> None:
         self.indices.add(alias)
+
+    def ensure_autocomplete_index(self, tenant_prefix: str) -> None:
+        self.indices.add(resolve_autocomplete_index(tenant_prefix))
+        self.suggest_docs.setdefault(resolve_autocomplete_index(tenant_prefix), {})
+
+    def upsert_autocomplete_terms(
+        self, tenant_prefix: str, tenant_id: str, term_counts: dict[str, int]
+    ) -> int:
+        if not term_counts:
+            return 0
+        index = resolve_autocomplete_index(tenant_prefix)
+        self.ensure_autocomplete_index(tenant_prefix)
+        bucket = self.suggest_docs[index]
+        now = datetime.now(UTC).isoformat()
+        for term, inc in term_counts.items():
+            if not term or inc <= 0:
+                continue
+            doc_id = term_doc_id(tenant_id, term)
+            existing = bucket.get(doc_id)
+            if existing:
+                existing["weight"] = int(existing.get("weight") or 0) + int(inc)
+                existing["updated_at"] = now
+            else:
+                bucket[doc_id] = {
+                    "tenant_id": tenant_id,
+                    "term": term,
+                    "prefix": term,
+                    "weight": int(inc),
+                    "updated_at": now,
+                }
+        return len(term_counts)
 
     def bulk_upsert(self, index: str, docs: list[dict[str, Any]]) -> tuple[int, int, list[str]]:
         ids: list[str] = []
@@ -186,6 +269,67 @@ class EsIndexBackend:
 
         # Guarantee typed-entity fields exist even on pre-existing indices.
         self.ensure_analysis_fields(physical)
+
+    def ensure_autocomplete_index(self, tenant_prefix: str) -> None:
+        index = resolve_autocomplete_index(tenant_prefix)
+        try:
+            if not self.client.indices.exists(index=index):
+                self.client.indices.create(
+                    index=index,
+                    settings=AUTOCOMPLETE_SETTINGS,
+                    mappings=AUTOCOMPLETE_MAPPINGS,
+                )
+        except Exception:
+            pass
+
+    def upsert_autocomplete_terms(
+        self, tenant_prefix: str, tenant_id: str, term_counts: dict[str, int]
+    ) -> int:
+        if not term_counts:
+            return 0
+        self.ensure_autocomplete_index(tenant_prefix)
+        index = resolve_autocomplete_index(tenant_prefix)
+        now = datetime.now(UTC).isoformat()
+        ops: list[dict[str, Any]] = []
+        for term, inc in term_counts.items():
+            if not term or inc <= 0:
+                continue
+            doc_id = term_doc_id(tenant_id, term)
+            ops.append({"update": {"_index": index, "_id": doc_id}})
+            ops.append(
+                {
+                    "script": {
+                        "source": (
+                            "ctx._source.weight = (ctx._source.weight ?: 0) + params.inc; "
+                            "ctx._source.updated_at = params.now; "
+                            "ctx._source.term = params.term; "
+                            "ctx._source.prefix = params.term; "
+                            "ctx._source.tenant_id = params.tenant_id;"
+                        ),
+                        "lang": "painless",
+                        "params": {
+                            "inc": int(inc),
+                            "now": now,
+                            "term": term,
+                            "tenant_id": tenant_id,
+                        },
+                    },
+                    "upsert": {
+                        "tenant_id": tenant_id,
+                        "term": term,
+                        "prefix": term,
+                        "weight": int(inc),
+                        "updated_at": now,
+                    },
+                }
+            )
+        if not ops:
+            return 0
+        try:
+            self.client.bulk(operations=ops, refresh=True)
+        except Exception:
+            return 0
+        return len(term_counts)
 
     def bulk_upsert(self, index: str, docs: list[dict[str, Any]]) -> tuple[int, int, list[str]]:
         if not docs:

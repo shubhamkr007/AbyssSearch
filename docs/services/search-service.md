@@ -31,8 +31,8 @@ flowchart LR
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/search` | Hybrid search with facets, filters, paging, sort |
-| GET | `/suggest` | As-you-type suggestions (search_as_you_type) |
-| GET | `/autocomplete` | Completion suggester |
+| GET | `/suggest` | Word-by-word autocomplete via `auto_complete-{prefix}` edge ngrams (falls back to title `search_as_you_type`) |
+| GET | `/autocomplete` | Same as `/suggest` (word suggestions) |
 | POST | `/did-you-mean` | Spelling correction (also embedded in `/search`) |
 
 Hybrid search on the free Elasticsearch Basic tier uses **client-side RRF**: the service runs two queries against the resolved alias and fuses them by rank (the native `rrf` retriever returns HTTP 403 without an Enterprise license).
