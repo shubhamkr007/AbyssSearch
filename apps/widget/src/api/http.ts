@@ -1,4 +1,5 @@
 import {
+  AnalyticsEventInput,
   AnswerParams,
   AnswerResponse,
   ApiClient,
@@ -121,6 +122,24 @@ export class HttpApiClient implements ApiClient {
   // to the `trending` attribute and local recent searches.
   async trending(): Promise<string[]> {
     return [];
+  }
+
+  /**
+   * Best-effort analytics beacon. Uses `keepalive` so in-flight events survive a
+   * navigation, and never throws — analytics must not affect the search UX.
+   */
+  sendEvents(events: AnalyticsEventInput[]): void {
+    if (!events.length) return;
+    try {
+      void fetch(`${this.base}/v1/events`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ events }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {
+      /* ignore: fire-and-forget */
+    }
   }
 
   private async request<T>(

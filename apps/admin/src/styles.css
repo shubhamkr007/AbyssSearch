@@ -208,7 +208,32 @@ textarea.mono, .mono { font-family: ui-monospace, Menlo, Consolas, monospace; fo
 .preview-snippet em { background: #fff3bf; color: #1f2328; font-style: normal; font-weight: 600; padding: 0 2px; border-radius: 2px; }
 .preview-meta { display: flex; gap: 6px; flex-wrap: wrap; }
 
+/* ---- analytics ---- */
+.table td.num, .table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff; }
+.seg-btn {
+  border: none; background: transparent; color: var(--muted);
+  padding: 7px 12px; cursor: pointer; font-size: 13px; font-weight: 500;
+  border-right: 1px solid var(--border);
+}
+.seg-btn:last-child { border-right: none; }
+.seg-btn:hover { background: #f3f4f6; color: var(--fg); }
+.seg-btn.active { background: var(--primary); color: #fff; }
+
+.stat-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px;
+}
+.stat {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 14px 16px;
+}
+.stat-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+.stat-value { font-size: 26px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.stat-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
 @media (max-width: 860px) {
   .view.split { grid-template-columns: 1fr; }
   .grid-2 { grid-template-columns: 1fr; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
 }

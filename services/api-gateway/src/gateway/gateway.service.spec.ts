@@ -1,8 +1,9 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 
+import { FakeAnalyticsClient } from '../clients/analytics.client';
 import { FakeConfigClient } from '../clients/config.client';
 import { FakeSearchClient } from '../clients/search.client';
-import { loadEnv } from '../config/env';
+import { type AppEnv, loadEnv } from '../config/env';
 import type { TenantContext } from '../domain/types';
 import { flattenFilters, GatewayService } from './gateway.service';
 
@@ -14,11 +15,13 @@ const CTX: TenantContext = {
   rateLimit: 60,
 };
 
-function build() {
+function build(envOverrides?: Partial<AppEnv>) {
   const search = new FakeSearchClient();
   const config = new FakeConfigClient();
-  const service = new GatewayService(search, config, loadEnv());
-  return { search, config, service };
+  const analytics = new FakeAnalyticsClient();
+  const env = { ...loadEnv(), ...envOverrides };
+  const service = new GatewayService(search, config, env, undefined, undefined, analytics);
+  return { search, config, analytics, service };
 }
 
 describe('flattenFilters', () => {
@@ -80,6 +83,60 @@ describe('GatewayService.doSearch', () => {
     await expect(service.doSearch(CTX, { query: 'x' })).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
+  });
+
+  it('logs a server-side query event when analytics is enabled', async () => {
+    const { search, analytics, service } = build({ analyticsEnabled: true });
+    search.searchResponse = {
+      query: '',
+      tab: 'all',
+      total: 0,
+      page: 1,
+      size: 10,
+      hybridMode: 'client_rrf',
+      degraded: false,
+      results: [],
+      facets: {},
+      didYouMean: null,
+      timings: { embedMs: 0, esMs: 0, totalMs: 0 },
+    };
+    await service.doSearch(CTX, { query: 'nothing here' });
+    expect(analytics.calls).toHaveLength(1);
+    expect(analytics.calls[0].prefix).toBe('acme');
+    const ev = analytics.calls[0].events[0];
+    expect(ev).toMatchObject({ type: 'query', query: 'nothing here', zeroResult: true, resultCount: 0 });
+  });
+
+  it('does not log query events when analytics is disabled', async () => {
+    const { analytics, service } = build({ analyticsEnabled: false });
+    await service.doSearch(CTX, { query: 'x' });
+    expect(analytics.calls).toHaveLength(0);
+  });
+
+  it('never fails search when the analytics write throws', async () => {
+    const { analytics, service } = build({ analyticsEnabled: true });
+    analytics.fail = true;
+    await expect(service.doSearch(CTX, { query: 'ok' })).resolves.toBeDefined();
+  });
+});
+
+describe('GatewayService.doEvents', () => {
+  it('forwards client beacons to analytics with the tenant prefix', () => {
+    const { analytics, service } = build({ analyticsEnabled: true });
+    const res = service.doEvents(CTX, {
+      events: [{ type: 'click', query: 'security', tab: 'all', docId: 'd1', rank: 0 }],
+    });
+    expect(res).toEqual({ accepted: 1 });
+    expect(analytics.calls[0].prefix).toBe('acme');
+    expect(analytics.calls[0].events[0]).toMatchObject({ type: 'click', docId: 'd1' });
+    expect(analytics.calls[0].events[0].ts).toBeDefined();
+  });
+
+  it('is a no-op when analytics is disabled', () => {
+    const { analytics, service } = build({ analyticsEnabled: false });
+    const res = service.doEvents(CTX, { events: [{ type: 'impression', query: 'x' }] });
+    expect(res).toEqual({ accepted: 1 });
+    expect(analytics.calls).toHaveLength(0);
   });
 });
 

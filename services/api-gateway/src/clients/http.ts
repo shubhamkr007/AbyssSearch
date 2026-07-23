@@ -11,6 +11,7 @@ export async function httpJson(
     body?: unknown;
     timeoutMs: number;
     correlationId?: string;
+    headers?: Record<string, string>;
   },
 ): Promise<HttpResult> {
   const controller = new AbortController();
@@ -21,6 +22,7 @@ export async function httpJson(
       headers: {
         'content-type': 'application/json',
         ...(init.correlationId ? { 'x-request-id': init.correlationId } : {}),
+        ...(init.headers ?? {}),
       },
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
       signal: controller.signal,

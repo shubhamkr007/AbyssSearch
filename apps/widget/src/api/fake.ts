@@ -1,4 +1,5 @@
 import {
+  AnalyticsEventInput,
   AnswerParams,
   AnswerResponse,
   ApiClient,
@@ -215,7 +216,14 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 /** In-memory gateway used for offline dev, the demo host page, and tests. */
 export class FakeApiClient implements ApiClient {
+  /** Captured analytics beacons (handy for the demo host page and tests). */
+  readonly events: AnalyticsEventInput[] = [];
+
   constructor(private readonly delayMs = 150) {}
+
+  sendEvents(events: AnalyticsEventInput[]): void {
+    this.events.push(...events);
+  }
 
   async getConfig(signal?: AbortSignal): Promise<WidgetConfig> {
     await sleep(this.delayMs, signal);

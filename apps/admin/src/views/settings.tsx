@@ -27,12 +27,13 @@ export function SettingsView() {
   const check = async () => {
     setChecking(true);
     update(draft); // probe against what we're about to save
-    const [s4, ingest, gw] = await Promise.all([
+    const [s4, ingest, gw, analytics] = await Promise.all([
       api.health(draft.adminApiBase),
       api.health(draft.ingestBase),
       api.health(draft.gatewayBase),
+      api.health(draft.analyticsBase),
     ]);
-    setHealth({ s4, ingest, gw });
+    setHealth({ s4, ingest, gw, analytics });
     setChecking(false);
   };
 
@@ -57,7 +58,10 @@ export function SettingsView() {
         <Field label="API Gateway (S2, for search preview)" hint={`Health:${dot(health.gw) || ' —'}`}>
           <input value={draft.gatewayBase} onChange={(e) => set({ gatewayBase: e.target.value })} />
         </Field>
-        <Field label="Admin token" hint="Sent as a Bearer token to S4 + ingestion. Dev default: dev-admin-token">
+        <Field label="Analytics API (S13, for reports)" hint={`Health:${dot(health.analytics) || ' —'}`}>
+          <input value={draft.analyticsBase} onChange={(e) => set({ analyticsBase: e.target.value })} />
+        </Field>
+        <Field label="Admin token" hint="Sent as a Bearer token to S4 + ingestion + analytics. Dev default: dev-admin-token">
           <input
             type="password"
             value={draft.adminToken}

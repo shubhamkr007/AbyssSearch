@@ -93,6 +93,17 @@ export interface SuggestParams {
   size?: number;
 }
 
+/** Client analytics beacon (impression/click). Sent to the gateway `/v1/events`. */
+export interface AnalyticsEventInput {
+  type: 'impression' | 'click';
+  query?: string;
+  tab?: string;
+  docId?: string;
+  rank?: number;
+  resultCount?: number;
+  sessionId?: string;
+}
+
 /** The port the UI depends on; implemented by HTTP (real gateway) and a Fake. */
 export interface ApiClient {
   getConfig(signal?: AbortSignal): Promise<WidgetConfig>;
@@ -102,6 +113,8 @@ export interface ApiClient {
   trending(signal?: AbortSignal): Promise<string[]>;
   /** RAG grounded answer (Answers tab). Throws if the gateway has RAG disabled. */
   answer(params: AnswerParams, signal?: AbortSignal): Promise<AnswerResponse>;
+  /** Fire-and-forget analytics beacon (impressions/clicks). Best-effort; never throws. */
+  sendEvents?(events: AnalyticsEventInput[]): void;
 }
 
 export const DEFAULT_TABS: TabConfig[] = [

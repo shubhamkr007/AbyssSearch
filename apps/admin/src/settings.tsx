@@ -8,7 +8,9 @@ export interface Settings {
   ingestBase: string;
   /** S2 API Gateway, used only for the live search preview. */
   gatewayBase: string;
-  /** Shared admin token (Phase 1 auth) sent to S4 + ingestion. */
+  /** S13 Analytics Service (reports: top queries, zero-results, CTR, latency). */
+  analyticsBase: string;
+  /** Shared admin token (Phase 1 auth) sent to S4 + ingestion + analytics. */
   adminToken: string;
 }
 
@@ -18,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
   adminApiBase: 'http://localhost:8001',
   ingestBase: 'http://localhost:8090',
   gatewayBase: 'http://localhost:8081',
+  analyticsBase: 'http://localhost:8093',
   adminToken: 'dev-admin-token',
 };
 

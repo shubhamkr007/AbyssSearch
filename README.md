@@ -15,8 +15,9 @@ Everything in this stack is **open-source / zero license cost**.
 | **Ingestion (S5/S6)** | FastAPI + Celery-ready — ingest, enrich, `ANALYZE` (NER) jobs |
 | **Analysis-ML (S8/S9)** | FastAPI — embeddings (`bge-small-en-v1.5`) + NER (spaCy) |
 | **RAG (S12)** | FastAPI — hybrid retrieve + grounded answers with citations |
-| **Admin Console (S11)** | React SPA — tenants, API keys, tabs, sources, relevance, ingest/NER jobs, live search preview |
-| **Data** | Elasticsearch (search/vectors); Postgres/SQLite for config/jobs |
+| **Analytics (S13)** | FastAPI — buffered event intake + reports (top queries, zero-results, CTR, latency) |
+| **Admin Console (S11)** | React SPA — tenants, API keys, tabs, sources, relevance, ingest/NER jobs, live search preview, analytics |
+| **Data** | Elasticsearch (search/vectors + analytics); Postgres/SQLite for config/jobs |
 
 Full architecture and roadmap: [`PROJECT_PLAN.md`](PROJECT_PLAN.md) · per-service specs: [`docs/services/`](docs/services/README.md)
 
@@ -86,6 +87,7 @@ More flags and details: [`scripts/README.md`](scripts/README.md)
 | **api-gateway** | **8081** | widget `api-base` |
 | ingestion | 8090 | `/docs` — ingest + analyze |
 | rag | 8092 | `/docs` — answers |
+| analytics | 8093 | `/docs` — search reports |
 | **admin-console** | **5174** | `pnpm --filter @enterprise-search/admin dev` |
 | widget dev host | 5173 | `pnpm --filter @enterprise-search/widget dev` |
 | elasticsearch | 9200 | run natively |
@@ -125,6 +127,11 @@ curl -X POST http://localhost:8081/v1/answers \
   -H "Authorization: Bearer pk_test_demo" \
   -H "Content-Type: application/json" \
   -d "{\"query\":\"how do I get reimbursed for travel\",\"topK\":3}"
+
+# Analytics report (admin token; tenant = index prefix). Query events are logged
+# automatically by the gateway on every search.
+curl "http://localhost:8093/reports/top-queries?tenant=demo&days=7" \
+  -H "Authorization: Bearer dev-admin-token"
 ```
 
 ## Key features (current)
@@ -136,7 +143,8 @@ curl -X POST http://localhost:8081/v1/answers \
 - Blank search = browse all tenant documents
 - Post-index NER via `POST /jobs/analyze`
 - Answers tab with grounded citations (Ollama optional)
-- Admin console for tenant/key/tab/source/relevance management + live search preview
+- Search analytics: top queries, zero-result rate, click-through rate, latency percentiles
+- Admin console for tenant/key/tab/source/relevance management + live search preview + analytics
 
 ## Repo layout
 
@@ -150,6 +158,7 @@ services/
   ingestion/           # S5 orchestrator + S6 workers
   analysis-ml/         # S8 embedding + S9 NER
   rag/                 # S12 RAG answers
+  analytics/           # S13 search analytics + reports
 scripts/               # dev-up / dev-down / dev-status / verify-gaps
 infra/                 # docker-compose (Postgres, Valkey, Elasticsearch)
 docs/services/         # service specifications

@@ -3,16 +3,18 @@ import { useState } from 'react';
 import { type Tenant } from './api';
 import { useSettings } from './settings';
 import { Banner } from './ui';
+import { AnalyticsView } from './views/analytics';
 import { IngestView } from './views/ingest';
 import { SearchPreviewView } from './views/search-preview';
 import { SettingsView } from './views/settings';
 import { TenantsView } from './views/tenants';
 
-type View = 'tenants' | 'ingest' | 'search' | 'settings';
+type View = 'tenants' | 'ingest' | 'search' | 'analytics' | 'settings';
 const NAV: { key: View; label: string }[] = [
   { key: 'tenants', label: 'Tenants' },
   { key: 'ingest', label: 'Ingest' },
   { key: 'search', label: 'Search preview' },
+  { key: 'analytics', label: 'Analytics' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -58,6 +60,7 @@ export function App() {
         {view === 'tenants' && <TenantsView selected={tenant} onSelect={setTenant} />}
         {view === 'ingest' && <IngestView selected={tenant} />}
         {view === 'search' && <SearchPreviewView selected={tenant} />}
+        {view === 'analytics' && <AnalyticsView selected={tenant} />}
         {view === 'settings' && <SettingsView />}
       </main>
     </div>

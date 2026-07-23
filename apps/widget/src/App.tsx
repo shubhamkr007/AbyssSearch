@@ -1,5 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { type CSSProperties, type KeyboardEvent, useId, useMemo, useState } from 'react';
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { FakeApiClient } from './api/fake';
 import { HttpApiClient } from './api/http';
@@ -89,6 +97,17 @@ function normalizeStringList(list?: string[] | null): string[] | null {
   return out.length > 0 ? out : null;
 }
 
+/** Stable per-session id so analytics can group a visitor's queries and clicks. */
+function newSessionId(): string {
+  try {
+    const c = globalThis.crypto;
+    if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  } catch {
+    /* jsdom / older runtimes */
+  }
+  return `s-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+}
+
 /** Root component wrapped by the custom element. Wires providers + theming. */
 export default function WidgetRoot(props: WidgetProps) {
   const { rootRef, emit } = useHostEmit();
@@ -153,7 +172,8 @@ export function SearchApp({
   tabOverride: TabConfig[] | null;
   trendingOverride?: string[] | null;
 }) {
-  const { placeholder, emit, tenantKey, disableHistory } = useWidget();
+  const { client, placeholder, emit, tenantKey, disableHistory } = useWidget();
+  const sessionId = useRef<string>(newSessionId()).current;
   const configQ = useConfig();
   const uid = useId().replace(/:/g, '');
   const listboxId = `es-listbox-${uid}`;
@@ -211,6 +231,19 @@ export function SearchApp({
   }, [configQ.data, searchQ.data]);
   const hasFacets = facetConfigs.some((c) => (searchQ.data?.facets[c.field]?.length ?? 0) > 0);
   const showFacets = !isAnswersTab && hasFacets;
+
+  // Impression beacon: one per distinct results view (query/tab/page). De-duped so
+  // re-renders and tab round-trips don't inflate the impression count.
+  const lastImpression = useRef('');
+  useEffect(() => {
+    if (!searched || isAnswersTab || !searchQ.data) return;
+    const key = `${query}\u0000${activeTab}\u0000${page}`;
+    if (lastImpression.current === key) return;
+    lastImpression.current = key;
+    client.sendEvents?.([
+      { type: 'impression', query, tab: activeTab, resultCount: searchQ.data.total, sessionId },
+    ]);
+  }, [searchQ.data, searched, isAnswersTab, query, activeTab, page, client, sessionId]);
 
   const commit = (raw: string) => {
     // Allow blank submit: empty query browses all tenant documents.
@@ -274,6 +307,9 @@ export function SearchApp({
 
   const onResultClick = (item: SearchResultItem, rank: number) => {
     emit('resultclick', { id: item.id, url: item.url, tab: activeTab, rank });
+    client.sendEvents?.([
+      { type: 'click', query, tab: activeTab, docId: item.id, rank, sessionId },
+    ]);
   };
 
   const onEntityClick = (text: string) => {

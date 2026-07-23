@@ -60,6 +60,7 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-down.ps1
 | api-gateway (BFF) | 8081 | **point the widget's `api-base` here** |
 | ingestion (orchestrator) | 8090 | `/docs`; `ANALYZE` + ingest jobs |
 | rag S12 (`-Rag`) | 8092 | `/docs`; grounded answers (Answers tab) |
+| analytics S13 | 8093 | `/docs`; search reports (top queries, zero-results, CTR, latency) |
 | postgres (`-RealConfig` / `pg-up`) | 5432 | Docker; volume `enterprise-search-pgdata` |
 | elasticsearch | 9200 | run natively (not managed by these scripts) |
 | admin-console S11 | 5174 | run separately: `pnpm --filter @enterprise-search/admin dev` |
@@ -86,6 +87,22 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-down.ps1
   generation uses a self-hosted **Ollama** model if reachable. Without Ollama the
   answer degrades to the most relevant source text (extractive), so the tab still
   works. Install Ollama (free) and `ollama pull llama3.2:1b` for real generation.
+
+## Analytics (S13)
+
+`dev-up.ps1` always starts the **Analytics Service** on :8093 (reusing the ingestion
+venv) and enables it on the gateway (`ANALYTICS_ENABLED=true`). The gateway logs a
+server-side `query` event for every `/v1/search` (latency, result count, zero-result
+flag); the widget beacons `impression` + `click` events to `POST /v1/events`. Events
+are buffered and bulk-written to per-tenant `analytics-{prefix}` indices. View the
+reports in the Admin Console **Analytics** tab, or hit the service directly:
+
+```powershell
+curl "http://localhost:8093/reports/top-queries?tenant=demo" -H "Authorization: Bearer dev-admin-token"
+```
+
+Analytics is best-effort and never blocks search: if ES or the service is down, the
+gateway just drops events. See [`services/analytics/README.md`](../services/analytics/README.md).
 
 ## verify-gaps.ps1
 

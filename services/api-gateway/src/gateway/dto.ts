@@ -1,5 +1,8 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
   IsInt,
   IsObject,
   IsOptional,
@@ -8,6 +11,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 
 export class SearchBodyDto {
@@ -62,6 +66,59 @@ export class AnswerBodyDto {
   @Min(1)
   @Max(20)
   topK?: number;
+}
+
+export class AnalyticsEventDto {
+  @IsString()
+  @MaxLength(32)
+  type!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  query?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  tab?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  docId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  rank?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  resultCount?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  latencyMs?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  zeroResult?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  sessionId?: string;
+}
+
+export class EventsBodyDto {
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => AnalyticsEventDto)
+  events!: AnalyticsEventDto[];
 }
 
 export class SuggestQueryDto {

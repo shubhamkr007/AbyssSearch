@@ -6,6 +6,12 @@ import { LoggerModule } from 'nestjs-pino';
 
 import { AuthGuard } from './auth/auth.guard';
 import {
+  ANALYTICS_CLIENT,
+  type AnalyticsClient,
+  FakeAnalyticsClient,
+  HttpAnalyticsClient,
+} from './clients/analytics.client';
+import {
   CachedConfigClient,
   CONFIG_CLIENT,
   type ConfigClient,
@@ -115,6 +121,15 @@ const ragProvider: Provider = env.useFakeRag
       inject: [APP_ENV],
     };
 
+const analyticsProvider: Provider = env.useFakeAnalytics
+  ? { provide: ANALYTICS_CLIENT, useFactory: (): AnalyticsClient => new FakeAnalyticsClient() }
+  : {
+      provide: ANALYTICS_CLIENT,
+      useFactory: (e: AppEnv) =>
+        new HttpAnalyticsClient(e.analyticsServiceUrl, e.analyticsTimeoutMs, e.analyticsToken),
+      inject: [APP_ENV],
+    };
+
 @Module({
   imports: [
     LoggerModule.forRoot({
@@ -136,6 +151,7 @@ const ragProvider: Provider = env.useFakeRag
     configProvider,
     searchProvider,
     ragProvider,
+    analyticsProvider,
     { provide: RATE_LIMITER, useClass: InMemoryRateLimiter },
     { provide: APP_INTERCEPTOR, useClass: RetryAfterInterceptor },
     MetricsService,

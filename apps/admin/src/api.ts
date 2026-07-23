@@ -114,6 +114,63 @@ export interface PreviewResponse {
   results: PreviewResultItem[];
 }
 
+// ---- analytics (S13) report shapes (snake_case, as returned by the service) ---
+
+export interface TopQuery {
+  query: string;
+  count: number;
+  zero_results: number;
+  avg_latency_ms: number | null;
+}
+
+export interface TopQueriesReport {
+  tenant: string;
+  days: number;
+  total_queries: number;
+  items: TopQuery[];
+}
+
+export interface ZeroResultQuery {
+  query: string;
+  count: number;
+}
+
+export interface ZeroResultsReport {
+  tenant: string;
+  days: number;
+  total_zero_result_searches: number;
+  zero_result_rate: number;
+  items: ZeroResultQuery[];
+}
+
+export interface CtrRow {
+  query: string;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+}
+
+export interface CtrReport {
+  tenant: string;
+  days: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  items: CtrRow[];
+}
+
+export interface LatencyReport {
+  tenant: string;
+  days: number;
+  count: number;
+  avg_ms: number | null;
+  p50_ms: number | null;
+  p90_ms: number | null;
+  p95_ms: number | null;
+  p99_ms: number | null;
+  max_ms: number | null;
+}
+
 // ---- errors -------------------------------------------------------------
 
 export class ApiError extends Error {
@@ -284,6 +341,38 @@ export class AdminApi {
       headers: { authorization: `Bearer ${tenantKey}`, 'content-type': 'application/json' },
       body: JSON.stringify({ query, size }),
     });
+  }
+
+  // --- analytics (S13): reports scoped to a tenant prefix ---
+
+  topQueries(tenant: string, days: number, size = 10): Promise<TopQueriesReport> {
+    return this.req(this.analyticsUrl('/reports/top-queries', tenant, days, size), {
+      headers: this.adminHeaders(),
+    });
+  }
+
+  zeroResults(tenant: string, days: number, size = 10): Promise<ZeroResultsReport> {
+    return this.req(this.analyticsUrl('/reports/zero-results', tenant, days, size), {
+      headers: this.adminHeaders(),
+    });
+  }
+
+  ctr(tenant: string, days: number, size = 10): Promise<CtrReport> {
+    return this.req(this.analyticsUrl('/reports/ctr', tenant, days, size), {
+      headers: this.adminHeaders(),
+    });
+  }
+
+  latency(tenant: string, days: number): Promise<LatencyReport> {
+    return this.req(this.analyticsUrl('/reports/latency', tenant, days), {
+      headers: this.adminHeaders(),
+    });
+  }
+
+  private analyticsUrl(path: string, tenant: string, days: number, size?: number): string {
+    const q = new URLSearchParams({ tenant, days: String(days) });
+    if (size !== undefined) q.set('size', String(size));
+    return `${this.s.analyticsBase}${path}?${q.toString()}`;
   }
 
   // --- health probes for the connection banner ---

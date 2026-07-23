@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
 import { AuthGuard } from '../src/auth/auth.guard';
+import { ANALYTICS_CLIENT, FakeAnalyticsClient } from '../src/clients/analytics.client';
 import { CONFIG_CLIENT, FakeConfigClient } from '../src/clients/config.client';
 import { FakeSearchClient, SEARCH_CLIENT } from '../src/clients/search.client';
 import { RetryAfterInterceptor } from '../src/common/retry-after.interceptor';
@@ -19,6 +20,7 @@ describe('API Gateway (e2e, fake downstreams)', () => {
   let app: INestApplication;
   const config = new FakeConfigClient();
   const search = new FakeSearchClient();
+  const analytics = new FakeAnalyticsClient();
 
   beforeAll(async () => {
     config.keys.set('pk_search', {
@@ -72,9 +74,10 @@ describe('API Gateway (e2e, fake downstreams)', () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [GatewayController, HealthController],
       providers: [
-        { provide: APP_ENV, useValue: { ...loadEnv(), useFake: true } },
+        { provide: APP_ENV, useValue: { ...loadEnv(), useFake: true, analyticsEnabled: true } },
         { provide: CONFIG_CLIENT, useValue: config },
         { provide: SEARCH_CLIENT, useValue: search },
+        { provide: ANALYTICS_CLIENT, useValue: analytics },
         { provide: RATE_LIMITER, useValue: new InMemoryRateLimiter() },
         { provide: APP_INTERCEPTOR, useClass: RetryAfterInterceptor },
         MetricsService,
@@ -155,6 +158,32 @@ describe('API Gateway (e2e, fake downstreams)', () => {
       .send({ query: 'a' })
       .expect(429);
     expect(res.headers['retry-after']).toBeDefined();
+  });
+
+  it('accepts client events (202) for a valid search key', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/v1/events')
+      .set(bearer('pk_search'))
+      .send({ events: [{ type: 'click', query: 'hello', tab: 'all', docId: 'd1', rank: 0 }] })
+      .expect(202);
+    expect(res.body).toEqual({ accepted: 1 });
+    expect(analytics.calls.at(-1)?.events[0]).toMatchObject({ type: 'click', docId: 'd1' });
+  });
+
+  it('rejects events without the search scope (403)', async () => {
+    await request(app.getHttpServer())
+      .post('/v1/events')
+      .set(bearer('pk_noscope'))
+      .send({ events: [{ type: 'click' }] })
+      .expect(403);
+  });
+
+  it('validates the events body (400)', async () => {
+    await request(app.getHttpServer())
+      .post('/v1/events')
+      .set(bearer('pk_search'))
+      .send({ events: [{ query: 'no type' }] })
+      .expect(400);
   });
 
   it('answers route is 501 in Phase 1 (needs rag scope first)', async () => {

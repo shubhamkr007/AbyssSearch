@@ -12,7 +12,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { CorrelationId, RequireScopes, Tenant } from '../auth/scopes.decorator';
 import type { TenantContext } from '../domain/types';
 import { RateLimitGuard } from '../ratelimit/rate-limit.guard';
-import { AnswerBodyDto, SearchBodyDto, SuggestQueryDto } from './dto';
+import { AnswerBodyDto, EventsBodyDto, SearchBodyDto, SuggestQueryDto } from './dto';
 import { GatewayService } from './gateway.service';
 
 @Controller('v1')
@@ -65,5 +65,16 @@ export class GatewayController {
     @CorrelationId() cid?: string,
   ) {
     return this.gateway.doAnswer(ctx, dto, cid);
+  }
+
+  @Post('events')
+  @HttpCode(202)
+  @RequireScopes('search')
+  events(
+    @Tenant() ctx: TenantContext,
+    @Body() dto: EventsBodyDto,
+    @CorrelationId() cid?: string,
+  ) {
+    return this.gateway.doEvents(ctx, dto, cid);
   }
 }

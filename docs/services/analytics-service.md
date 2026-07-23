@@ -2,6 +2,13 @@
 
 > Captures search behavior and serves aggregates that drive tuning and suggestions. Control context. Phase 2.
 
+> **Implemented.** Service lives in [`services/analytics/`](../../services/analytics/README.md).
+> Per-tenant indices are named `analytics-{prefix}` (e.g. `analytics-demo`) — intentionally
+> **not** matching the `{prefix}-*` content wildcard the search service reads, so analytics
+> never pollutes search. The gateway logs server-side `query` events on `/v1/search` and
+> exposes `POST /v1/events` for widget `impression`/`click` beacons. Time-based indices +
+> ILM rollover remain future work.
+
 ## 1. Purpose and responsibilities
 
 - Ingest client events (impressions, clicks, zero-result) and query logs.

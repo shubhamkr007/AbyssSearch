@@ -5,6 +5,8 @@ export interface AppEnv {
   configServiceUrl: string;
   searchServiceUrl: string;
   ragServiceUrl: string;
+  analyticsServiceUrl: string;
+  analyticsToken: string;
   redisUrl: string;
 
   rateLimitDefault: number;
@@ -14,9 +16,13 @@ export interface AppEnv {
   downstreamTimeoutMs: number;
   /** Longer timeout for RAG (LLM generation is much slower than search/config). */
   ragTimeoutMs: number;
+  /** Short timeout for fire-and-forget analytics writes (must not slow search). */
+  analyticsTimeoutMs: number;
 
   logLevel: string;
   ragEnabled: boolean;
+  /** Emit server-side query events + expose POST /v1/events. */
+  analyticsEnabled: boolean;
 
   /** Dev/test: use in-memory fake downstream clients (no Config/Search needed). */
   useFake: boolean;
@@ -26,6 +32,8 @@ export interface AppEnv {
   useFakeSearch: boolean;
   /** Fake only the RAG client (default: useFake). */
   useFakeRag: boolean;
+  /** Fake only the Analytics client (default: useFake). */
+  useFakeAnalytics: boolean;
 }
 
 function num(value: string | undefined, fallback: number): number {
@@ -45,6 +53,8 @@ export function loadEnv(): AppEnv {
     configServiceUrl: process.env.CONFIG_SERVICE_URL ?? 'http://localhost:8000',
     searchServiceUrl: process.env.SEARCH_SERVICE_URL ?? 'http://localhost:8080',
     ragServiceUrl: process.env.RAG_SERVICE_URL ?? '',
+    analyticsServiceUrl: process.env.ANALYTICS_SERVICE_URL ?? '',
+    analyticsToken: process.env.ANALYTICS_TOKEN ?? 'dev-admin-token',
     redisUrl: process.env.REDIS_URL ?? '',
 
     rateLimitDefault: num(process.env.RATE_LIMIT_DEFAULT, 60),
@@ -53,13 +63,16 @@ export function loadEnv(): AppEnv {
     keyCacheTtlSeconds: num(process.env.KEY_CACHE_TTL_SECONDS, 30),
     downstreamTimeoutMs: num(process.env.DOWNSTREAM_TIMEOUT_MS, 3000),
     ragTimeoutMs: num(process.env.RAG_TIMEOUT_MS, 60000),
+    analyticsTimeoutMs: num(process.env.ANALYTICS_TIMEOUT_MS, 1500),
 
     logLevel: process.env.LOG_LEVEL ?? 'info',
     ragEnabled: bool(process.env.RAG_ENABLED, false),
+    analyticsEnabled: bool(process.env.ANALYTICS_ENABLED, false),
 
     useFake,
     useFakeConfig: bool(process.env.USE_FAKE_CONFIG, useFake),
     useFakeSearch: bool(process.env.USE_FAKE_SEARCH, useFake),
     useFakeRag: bool(process.env.USE_FAKE_RAG, useFake),
+    useFakeAnalytics: bool(process.env.USE_FAKE_ANALYTICS, useFake),
   };
 }

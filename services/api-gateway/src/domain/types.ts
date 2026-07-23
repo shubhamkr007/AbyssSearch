@@ -98,6 +98,22 @@ export interface S12AnswerResponse {
   citations: S12Citation[];
 }
 
+// ---- S13 Analytics Service contract (downstream) ------------------------
+
+/** A single analytics event the gateway forwards to the Analytics Service. */
+export interface AnalyticsEvent {
+  type: string;
+  query?: string;
+  tab?: string;
+  docId?: string;
+  rank?: number;
+  resultCount?: number;
+  latencyMs?: number;
+  zeroResult?: boolean;
+  sessionId?: string;
+  ts?: string;
+}
+
 // ---- Public widget contract (what the gateway returns) ------------------
 
 export interface WidgetSearchResult {

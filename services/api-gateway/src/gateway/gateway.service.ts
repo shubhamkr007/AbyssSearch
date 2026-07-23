@@ -6,11 +6,13 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 
+import { ANALYTICS_CLIENT, type AnalyticsClient } from '../clients/analytics.client';
 import { CONFIG_CLIENT, type ConfigClient } from '../clients/config.client';
 import { RAG_CLIENT, type RagClient } from '../clients/rag.client';
 import { SEARCH_CLIENT, type SearchClient } from '../clients/search.client';
 import { APP_ENV, type AppEnv } from '../config/env';
 import type {
+  AnalyticsEvent,
   JsonObject,
   S3SearchRequest,
   S3SuggestResponse,
@@ -19,7 +21,7 @@ import type {
   WidgetSearchResponse,
 } from '../domain/types';
 import { MetricsService } from '../metrics/metrics.service';
-import type { AnswerBodyDto, SearchBodyDto, SuggestQueryDto } from './dto';
+import type { AnswerBodyDto, EventsBodyDto, SearchBodyDto, SuggestQueryDto } from './dto';
 
 /**
  * Flatten the widget filter object into the flat `{ field: string[] }` shape the
@@ -53,7 +55,23 @@ export class GatewayService {
     @Inject(APP_ENV) private readonly env: AppEnv,
     @Optional() @Inject(MetricsService) private readonly metrics?: MetricsService,
     @Optional() @Inject(RAG_CLIENT) private readonly rag?: RagClient,
+    @Optional() @Inject(ANALYTICS_CLIENT) private readonly analytics?: AnalyticsClient,
   ) {}
+
+  /**
+   * Forward events to the Analytics Service without ever blocking or failing the
+   * caller. Analytics is best-effort: on any error we bump a metric and move on.
+   */
+  private recordEvents(
+    prefix: string,
+    events: AnalyticsEvent[],
+    correlationId?: string,
+  ): void {
+    if (!this.env.analyticsEnabled || !this.analytics || events.length === 0) return;
+    void this.analytics.record(prefix, events, correlationId).catch(() => {
+      this.metrics?.downstreamErrors.inc({ service: 'analytics' });
+    });
+  }
 
   async doSearch(
     ctx: TenantContext,
@@ -78,6 +96,24 @@ export class GatewayService {
       throw new ServiceUnavailableException('search is temporarily unavailable');
     }
 
+    const tookMs = Date.now() - started;
+    // Server-side query log: authoritative for top-queries / zero-results /
+    // latency (doesn't depend on the widget wiring a beacon). Fire-and-forget.
+    this.recordEvents(
+      ctx.prefix,
+      [
+        {
+          type: 'query',
+          query: dto.query,
+          tab: resp.tab,
+          resultCount: resp.total,
+          latencyMs: tookMs,
+          zeroResult: resp.total === 0,
+        },
+      ],
+      correlationId,
+    );
+
     return {
       query: resp.query,
       didYouMean: resp.didYouMean,
@@ -85,7 +121,7 @@ export class GatewayService {
       total: resp.total,
       page: resp.page,
       size: resp.size,
-      took_ms: Date.now() - started,
+      took_ms: tookMs,
       degraded: resp.degraded,
       results: resp.results.map((r) => ({
         id: r.id,
@@ -178,6 +214,29 @@ export class GatewayService {
       this.metrics?.downstreamErrors.inc({ service: 'search' });
       return { query: dto.q, suggestions: [] };
     }
+  }
+
+  /** Accept client beacons (impressions/clicks) and forward them best-effort. */
+  doEvents(
+    ctx: TenantContext,
+    dto: EventsBodyDto,
+    correlationId?: string,
+  ): { accepted: number } {
+    const ts = new Date().toISOString();
+    const events: AnalyticsEvent[] = dto.events.map((e) => ({
+      type: e.type,
+      query: e.query,
+      tab: e.tab,
+      docId: e.docId,
+      rank: e.rank,
+      resultCount: e.resultCount,
+      latencyMs: e.latencyMs,
+      zeroResult: e.zeroResult,
+      sessionId: e.sessionId,
+      ts,
+    }));
+    this.recordEvents(ctx.prefix, events, correlationId);
+    return { accepted: events.length };
   }
 
   async doConfig(ctx: TenantContext, correlationId?: string): Promise<JsonObject> {

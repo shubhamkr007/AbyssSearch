@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Show the health of Elasticsearch and the four local stack services.
+  Show the health of Elasticsearch and the local stack services.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\dev-status.ps1
@@ -23,7 +23,8 @@ $targets = @(
   @{ Name = 'search';        Url = 'http://localhost:8080/healthz' },
   @{ Name = 'gateway';       Url = 'http://localhost:8081/healthz' },
   @{ Name = 'ingestion';     Url = 'http://localhost:8090/healthz' },
-  @{ Name = 'rag';           Url = 'http://localhost:8092/healthz' }
+  @{ Name = 'rag';           Url = 'http://localhost:8092/healthz' },
+  @{ Name = 'analytics';     Url = 'http://localhost:8093/healthz' }
 )
 
 Write-Host '=== Enterprise Search - status ===' -ForegroundColor Green

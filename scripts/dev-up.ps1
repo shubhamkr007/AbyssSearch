@@ -10,6 +10,7 @@
     api-gateway (BFF)             : 8081   <- point the widget's api-base here
     ingestion (orchestrator)      : 8090
     rag (-Rag)                    : 8092   (Answers tab; needs analysis-ml + optional Ollama)
+    analytics (S13)               : 8093   (search reports; gateway logs query events)
     postgres (-RealConfig)        : 5432   (Docker container, volume enterprise-search-pgdata)
 
   Elasticsearch is expected to already be running on :9200 (you run it natively).
@@ -59,7 +60,8 @@ $search    = Join-Path $root 'services\search-service'
 $gateway   = Join-Path $root 'services\api-gateway'
 $ingest    = Join-Path $root 'services\ingestion'
 $ragDir    = Join-Path $root 'services\rag'
-# RAG reuses the ingestion venv (identical deps: fastapi/httpx/elasticsearch/...).
+$analyticsDir = Join-Path $root 'services\analytics'
+# RAG + analytics reuse the ingestion venv (identical deps: fastapi/elasticsearch/...).
 $ingestVenvPy = Join-Path $ingest '.venv\Scripts\python.exe'
 # 127.0.0.1 avoids Windows Node resolving localhost -> ::1 while Docker publishes IPv4 only.
 $dbUrl     = 'postgresql://tenant_config:tenant_config@127.0.0.1:5432/tenant_config?schema=public'
@@ -146,7 +148,9 @@ $pids += Start-Svc -Title 'es-search' -WorkDir $search -EnvVars @{
 } -RunCmd 'node dist\main.js'
 
 $gatewayEnv = @{
-  PORT = '8081'; USE_FAKE_SEARCH = 'false'; SEARCH_SERVICE_URL = 'http://localhost:8080'; RAG_ENABLED = 'false'; LOG_LEVEL = 'info'
+  PORT = '8081'; USE_FAKE_SEARCH = 'false'; SEARCH_SERVICE_URL = 'http://localhost:8080'; RAG_ENABLED = 'false'
+  ANALYTICS_ENABLED = 'true'; USE_FAKE_ANALYTICS = 'false'; ANALYTICS_SERVICE_URL = 'http://localhost:8093'; ANALYTICS_TOKEN = 'dev-admin-token'
+  LOG_LEVEL = 'info'
 }
 if ($RealConfig) {
   $gatewayEnv['USE_FAKE_CONFIG'] = 'false'
@@ -164,6 +168,11 @@ $pids += Start-Svc -Title 'es-gateway' -WorkDir $gateway -EnvVars $gatewayEnv -R
 $pids += Start-Svc -Title 'es-ingestion' -WorkDir $ingest -EnvVars @{
   PORT = '8090'; USE_FAKE = 'false'; USE_INLINE = 'true'; ELASTICSEARCH_URL = 'http://localhost:9200'; NER_SERVICE_URL = 'http://localhost:8000'; EMBEDDING_SERVICE_URL = 'http://localhost:8000'; ADMIN_TOKEN = 'dev-admin-token'; DATABASE_URL = 'sqlite+pysqlite:///./ingestion.db'; LOG_LEVEL = 'info'
 } -RunCmd "& '.\.venv\Scripts\python.exe' -m uvicorn app.main:app --port 8090"
+
+Write-Host 'analytics     : S13 on :8093 (search reports; gateway logs query events).' -ForegroundColor DarkGray
+$pids += Start-Svc -Title 'es-analytics' -WorkDir $analyticsDir -EnvVars @{
+  PORT = '8093'; USE_FAKE = 'false'; ELASTICSEARCH_URL = 'http://localhost:9200'; ADMIN_TOKEN = 'dev-admin-token'; CORS_ORIGINS = '*'; LOG_LEVEL = 'info'
+} -RunCmd "& '$ingestVenvPy' -m uvicorn app.main:app --port 8093"
 
 if ($Rag) {
   Write-Host 'rag           : S12 on :8092 (Answers tab). Set OLLAMA_MODEL for real generation.' -ForegroundColor DarkGray
@@ -187,7 +196,8 @@ if ($RealConfig) {
 $targets += @(
   @{ Name = 'search';      Url = 'http://localhost:8080/healthz'; Timeout = 30 },
   @{ Name = 'gateway';     Url = 'http://localhost:8081/healthz'; Timeout = 30 },
-  @{ Name = 'ingestion';   Url = 'http://localhost:8090/healthz'; Timeout = 30 }
+  @{ Name = 'ingestion';   Url = 'http://localhost:8090/healthz'; Timeout = 30 },
+  @{ Name = 'analytics';   Url = 'http://localhost:8093/healthz'; Timeout = 30 }
 )
 if ($Rag) {
   $targets += @{ Name = 'rag'; Url = 'http://localhost:8092/healthz'; Timeout = 30 }
@@ -215,6 +225,7 @@ Write-Host '  search      : http://localhost:8080/healthz'
 Write-Host '  gateway     : http://localhost:8081        (widget api-base)'
 Write-Host '  ingestion   : http://localhost:8090/docs'
 if ($Rag) { Write-Host '  rag         : http://localhost:8092/docs   (Answers tab; POST /v1/answers via gateway)' }
+Write-Host '  analytics   : http://localhost:8093/docs   (reports; gateway logs query events)'
 Write-Host ''
 if ($Rag) {
   Write-Host 'RAG is on. For real generative answers install Ollama (free) and pull a model:' -ForegroundColor Cyan
