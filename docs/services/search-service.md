@@ -73,7 +73,7 @@ Fusion: `score(doc) = Σ 1 / (rank_constant + rank)` across both lists (`rank_co
 
 ## 7. Configuration (env)
 
-`PORT`, `ELASTICSEARCH_URL`, `ELASTICSEARCH_API_KEY`, `EMBEDDING_SERVICE_URL`, `REDIS_URL`, `RRF_RANK_CONSTANT` (default 60), `RRF_RANK_WINDOW` (default 100), `KNN_K`, `KNN_NUM_CANDIDATES`, `HYBRID_MODE` (`client_rrf` default | `native_rrf` for licensed clusters), `MAX_PAGE_SIZE`, `QUERY_CACHE_TTL`.
+`PORT`, `ELASTICSEARCH_URL`, `ELASTICSEARCH_API_KEY`, `EMBEDDING_SERVICE_URL`, `REDIS_URL`, `RRF_RANK_CONSTANT` (default 60), `RRF_RANK_WINDOW` (default 100), `KNN_K`, `KNN_NUM_CANDIDATES`, `HYBRID_MODE` (`client_rrf` default | `native_rrf` for licensed clusters), `MAX_PAGE_SIZE`, `QUERY_CACHE_TTL`, `RERANKER_SERVICE_URL`, `RERANK_ENABLED`, `RERANKER_TIMEOUT_MS`, `RERANK_CANDIDATES`.
 
 ## 8. Scaling and performance
 
@@ -123,7 +123,7 @@ Fusion: `score(doc) = Σ 1 / (rank_constant + rank)` across both lists (`rank_co
 
 ## 15. Open questions / future work
 
-- Cross-encoder reranking of top-N (Reranker Service, Phase 2/3).
+- Cross-encoder reranking of top-N is implemented via S14 (`RERANKER_SERVICE_URL` + per-request `rerankEnabled` / `RERANK_ENABLED`); further tuning (GPU, distillation) remains open.
 - Query classification to route short vs long queries to different blends.
 - Learning-to-rank with click signals (Phase 3).
 - Multi-index (cross-tab "All") relevance normalization strategy.

@@ -12,6 +12,12 @@ import {
 import { HealthController } from './health/health.controller';
 import { MetricsController } from './metrics/metrics.controller';
 import { MetricsService } from './metrics/metrics.service';
+import {
+  FakeRerankerClient,
+  HttpRerankerClient,
+  NoopRerankerClient,
+  RERANKER_CLIENT,
+} from './rerank/reranker.client';
 import { SEARCH_BACKEND } from './search/backend';
 import { EsSearchBackend } from './search/es.backend';
 import { FakeSearchBackend } from './search/fake.backend';
@@ -31,6 +37,17 @@ const embeddingProvider: Provider = env.useFake
       useFactory: (e: AppEnv) => new HttpEmbeddingClient(e.embeddingServiceUrl, e.embeddingTimeoutMs),
       inject: [APP_ENV],
     };
+
+const rerankerProvider: Provider = env.useFake
+  ? { provide: RERANKER_CLIENT, useFactory: () => new FakeRerankerClient() }
+  : env.rerankerServiceUrl
+    ? {
+        provide: RERANKER_CLIENT,
+        useFactory: (e: AppEnv) =>
+          new HttpRerankerClient(e.rerankerServiceUrl, e.rerankerTimeoutMs),
+        inject: [APP_ENV],
+      }
+    : { provide: RERANKER_CLIENT, useFactory: () => new NoopRerankerClient() };
 
 @Module({
   imports: [
@@ -52,6 +69,7 @@ const embeddingProvider: Provider = env.useFake
     { provide: APP_ENV, useValue: env },
     backendProvider,
     embeddingProvider,
+    rerankerProvider,
     MetricsService,
     SearchService,
   ],

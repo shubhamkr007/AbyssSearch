@@ -24,7 +24,8 @@ $targets = @(
   @{ Name = 'gateway';       Url = 'http://localhost:8081/healthz' },
   @{ Name = 'ingestion';     Url = 'http://localhost:8090/healthz' },
   @{ Name = 'rag';           Url = 'http://localhost:8092/healthz' },
-  @{ Name = 'analytics';     Url = 'http://localhost:8093/healthz' }
+  @{ Name = 'analytics';     Url = 'http://localhost:8093/healthz' },
+  @{ Name = 'reranker';      Url = 'http://localhost:8094/healthz' }
 )
 
 Write-Host '=== Enterprise Search - status ===' -ForegroundColor Green

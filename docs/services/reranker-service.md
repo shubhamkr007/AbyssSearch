@@ -77,9 +77,9 @@ Request/response:
 
 ## 14. Implementation steps (Phase 2/3)
 
-1. Stand up the cross-encoder service with `/rerank`.
-2. Integrate as an optional second stage in the Search Service behind a per-tenant flag.
-3. Add the latency-budget guard and graceful fallback.
+1. Stand up the cross-encoder service with `/rerank`. **Done** — `services/reranker` on `:8094`.
+2. Integrate as an optional second stage in the Search Service behind a per-tenant flag. **Done** — `boosts.rerankEnabled` via gateway + `RERANK_ENABLED` env.
+3. Add the latency-budget guard and graceful fallback. **Done**.
 4. Measure relevance uplift and cost; enable per tenant where it helps.
 
 ## 15. Open questions / future work

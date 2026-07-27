@@ -5,6 +5,7 @@ import request from 'supertest';
 import { APP_ENV, loadEnv } from '../src/config/env';
 import { EMBEDDING_CLIENT, FakeEmbeddingClient } from '../src/embedding/embedding.client';
 import { HealthController } from '../src/health/health.controller';
+import { FakeRerankerClient, RERANKER_CLIENT } from '../src/rerank/reranker.client';
 import { SEARCH_BACKEND } from '../src/search/backend';
 import { FakeSearchBackend } from '../src/search/fake.backend';
 import { SearchController } from '../src/search/search.controller';
@@ -14,6 +15,7 @@ describe('Search API (e2e, fake backend)', () => {
   let app: INestApplication;
   const backend = new FakeSearchBackend();
   const embedding = new FakeEmbeddingClient([0.1, 0.2]);
+  const reranker = new FakeRerankerClient();
 
   beforeAll(async () => {
     backend.bm25 = {
@@ -44,6 +46,7 @@ describe('Search API (e2e, fake backend)', () => {
         { provide: APP_ENV, useValue: { ...loadEnv(), useFake: true } },
         { provide: SEARCH_BACKEND, useValue: backend },
         { provide: EMBEDDING_CLIENT, useValue: embedding },
+        { provide: RERANKER_CLIENT, useValue: reranker },
         SearchService,
       ],
     }).compile();

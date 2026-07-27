@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsInt,
   IsObject,
   IsOptional,
@@ -52,6 +53,11 @@ export class SearchDto {
   @IsArray()
   @IsString({ each: true })
   sources?: string[];
+
+  /** Per-tenant flag from gateway (searchConfig.boosts.rerankEnabled). */
+  @IsOptional()
+  @IsBoolean()
+  rerankEnabled?: boolean;
 }
 
 export class SuggestDto {

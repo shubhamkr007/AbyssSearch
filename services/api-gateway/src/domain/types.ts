@@ -31,6 +31,8 @@ export interface S3SearchRequest {
   page?: number;
   size?: number;
   sources?: string[];
+  /** From searchConfig.boosts.rerankEnabled — optional S14 second stage. */
+  rerankEnabled?: boolean;
 }
 
 export interface S3SearchResult {

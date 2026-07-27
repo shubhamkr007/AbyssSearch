@@ -79,6 +79,16 @@ export class GatewayService {
     correlationId?: string,
   ): Promise<WidgetSearchResponse> {
     const started = Date.now();
+
+    // Per-tenant S14 flag lives in searchConfig.boosts.rerankEnabled (no schema migration).
+    let rerankEnabled = false;
+    try {
+      const cfg = await this.config.getConfig(ctx.tenantId, correlationId);
+      rerankEnabled = cfg.searchConfig?.boosts?.rerankEnabled === true;
+    } catch {
+      // Config miss must not block search — rerank stays off.
+    }
+
     const req: S3SearchRequest = {
       tenant: ctx.prefix,
       q: dto.query,
@@ -86,6 +96,7 @@ export class GatewayService {
       filters: flattenFilters(dto.filters),
       page: dto.page,
       size: dto.size,
+      rerankEnabled: rerankEnabled || undefined,
     };
 
     let resp;

@@ -54,8 +54,10 @@ Response (abridged):
 1. Resolve the read alias from `tenant` + `tab` (`{prefix}-{sourceType}`, or `{prefix}-*` for "all").
 2. Fetch the query embedding from S8 (cached in an in-process LRU).
 3. Run BM25 (window = `RRF_RANK_WINDOW`, with facets + highlight + did-you-mean) **and** kNN in parallel.
-4. Fuse by rank: `score(doc) = Σ 1 / (RRF_RANK_CONSTANT + rank)`; sort; paginate.
-5. Map hits into the stable contract. Every query carries a **mandatory `tenant_id` filter**.
+4. Fuse by rank: `score(doc) = Σ 1 / (RRF_RANK_CONSTANT + rank)`; sort.
+5. Optional **S14 rerank**: when `rerankEnabled` (request) or `RERANK_ENABLED` (env) is set,
+   POST top-N candidates to the Reranker Service and reorder; on failure keep RRF order.
+6. Paginate and map hits into the stable contract. Every query carries a **mandatory `tenant_id` filter**.
 
 Set `HYBRID_MODE=native_rrf` on a licensed cluster to send a single `retriever.rrf`
 request instead; on any failure it falls back to client-side RRF.
@@ -64,7 +66,8 @@ request instead; on any failure it falls back to client-side RRF.
 
 See [`.env.example`](.env.example). Key vars: `ELASTICSEARCH_URL`, `ELASTICSEARCH_API_KEY`,
 `EMBEDDING_SERVICE_URL`, `HYBRID_MODE`, `RRF_RANK_CONSTANT`, `RRF_RANK_WINDOW`, `KNN_K`,
-`KNN_NUM_CANDIDATES`, `MAX_PAGE_SIZE`, `DID_YOU_MEAN_THRESHOLD`, `USE_FAKE`.
+`KNN_NUM_CANDIDATES`, `MAX_PAGE_SIZE`, `DID_YOU_MEAN_THRESHOLD`, `USE_FAKE`,
+`RERANKER_SERVICE_URL`, `RERANK_ENABLED`, `RERANKER_TIMEOUT_MS`, `RERANK_CANDIDATES`.
 
 ## Local development
 
@@ -96,7 +99,7 @@ for Elasticsearch and S8, so unit/e2e tests run without any containers. Coverage
 - `query-builder` - DSL shape, mandatory tenant filter, facets/highlight, suggest, native RRF.
 - `rrf` - fusion ordering, window, weights, deterministic tie-break.
 - `search.service` - hybrid fusion, BM25-only degradation (embedding down / kNN failure),
-  full-ES-outage degradation, did-you-mean, size capping, suggest de-dup.
+  full-ES-outage degradation, optional S14 rerank + soft fallback, did-you-mean, size capping, suggest de-dup.
 - `search.e2e` - HTTP contract + validation via the controllers.
 
 ## Resilience & security notes

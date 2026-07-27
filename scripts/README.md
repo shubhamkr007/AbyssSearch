@@ -11,6 +11,7 @@ takes the others down, and they survive the shell that launched them.
 - Node services built once and Python venvs created:
   - `services/search-service/dist` and `services/api-gateway/dist` (the script builds these if missing).
   - `services/analysis-ml/.venv` and `services/ingestion/.venv` with dependencies installed.
+  - For `-Rerank`: `services/reranker/.venv` (`pip install -e .`).
 
 ## Usage
 
@@ -29,6 +30,9 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealCon
 
 # Start with the RAG service + Answers tab (POST /v1/answers)
 powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -Rag
+
+# Start with the Reranker (S14 cross-encoder second stage)
+powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -Rerank
 
 # Force a rebuild of the Node services first
 powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Build
@@ -61,6 +65,7 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-down.ps1
 | ingestion (orchestrator) | 8090 | `/docs`; `ANALYZE` + ingest jobs |
 | rag S12 (`-Rag`) | 8092 | `/docs`; grounded answers (Answers tab) |
 | analytics S13 | 8093 | `/docs`; search reports (top queries, zero-results, CTR, latency) |
+| reranker S14 (`-Rerank`) | 8094 | `/docs`; cross-encoder second stage (needs `services/reranker/.venv`) |
 | postgres (`-RealConfig` / `pg-up`) | 5432 | Docker; volume `enterprise-search-pgdata` |
 | elasticsearch | 9200 | run natively (not managed by these scripts) |
 | admin-console S11 | 5174 | run separately: `pnpm --filter @enterprise-search/admin dev` |
@@ -87,6 +92,11 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-down.ps1
   generation uses a self-hosted **Ollama** model if reachable. Without Ollama the
   answer degrades to the most relevant source text (extractive), so the tab still
   works. Install Ollama (free) and `ollama pull llama3.2:1b` for real generation.
+- **`-Rerank`** starts the Reranker (S14) on :8094 (own venv under
+  `services/reranker/.venv`) and sets search `RERANKER_SERVICE_URL` +
+  `RERANK_ENABLED=true`. First boot downloads `BAAI/bge-reranker-base`. Per-tenant
+  opt-in without the global flag: set Admin → Relevance → boosts to
+  `{ "rerankEnabled": true }`. On timeout/error search keeps the RRF order.
 
 ## Analytics (S13)
 

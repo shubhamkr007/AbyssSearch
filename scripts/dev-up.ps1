@@ -11,6 +11,7 @@
     ingestion (orchestrator)      : 8090
     rag (-Rag)                    : 8092   (Answers tab; needs analysis-ml + optional Ollama)
     analytics (S13)               : 8093   (search reports; gateway logs query events)
+    reranker (-Rerank)            : 8094   (S14 cross-encoder second stage after RRF)
     postgres (-RealConfig)        : 5432   (Docker container, volume enterprise-search-pgdata)
 
   Elasticsearch is expected to already be running on :9200 (you run it natively).
@@ -31,6 +32,11 @@
   self-hosted Ollama model if reachable, otherwise it degrades to an extractive
   answer. Best combined with -Embeddings for semantic retrieval.
 
+.PARAMETER Rerank
+  Also start the Reranker service (S14) on :8094 and point search-service at it
+  with RERANK_ENABLED=true. Loads BAAI/bge-reranker-base on CPU (slow first start).
+  Per-tenant opt-in via searchConfig.boosts.rerankEnabled; global env enables for all.
+
 .PARAMETER Build
   Force a rebuild of the Node services before starting.
 
@@ -43,11 +49,13 @@
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig -Seed
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -Rag
+  powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -Rerank
 #>
 param(
   [switch]$Embeddings,
   [switch]$RealConfig,
   [switch]$Rag,
+  [switch]$Rerank,
   [switch]$Build,
   [switch]$Seed
 )
@@ -61,8 +69,10 @@ $gateway   = Join-Path $root 'services\api-gateway'
 $ingest    = Join-Path $root 'services\ingestion'
 $ragDir    = Join-Path $root 'services\rag'
 $analyticsDir = Join-Path $root 'services\analytics'
+$rerankerDir = Join-Path $root 'services\reranker'
 # RAG + analytics reuse the ingestion venv (identical deps: fastapi/elasticsearch/...).
 $ingestVenvPy = Join-Path $ingest '.venv\Scripts\python.exe'
+$rerankerVenvPy = Join-Path $rerankerDir '.venv\Scripts\python.exe'
 # 127.0.0.1 avoids Windows Node resolving localhost -> ::1 while Docker publishes IPv4 only.
 $dbUrl     = 'postgresql://tenant_config:tenant_config@127.0.0.1:5432/tenant_config?schema=public'
 
@@ -143,9 +153,16 @@ if ($RealConfig) {
   Write-Host 'config        : seeded fake config (pass -RealConfig for real S4 + Postgres).' -ForegroundColor DarkGray
 }
 
-$pids += Start-Svc -Title 'es-search' -WorkDir $search -EnvVars @{
-  PORT = '8080'; USE_FAKE = 'false'; ELASTICSEARCH_URL = 'http://localhost:9200'; EMBEDDING_SERVICE_URL = 'http://localhost:8000'; LOG_LEVEL = 'info'
-} -RunCmd 'node dist\main.js'
+$searchEnv = @{
+  PORT = '8080'; USE_FAKE = 'false'; ELASTICSEARCH_URL = 'http://localhost:9200'
+  EMBEDDING_SERVICE_URL = 'http://localhost:8000'; LOG_LEVEL = 'info'
+}
+if ($Rerank) {
+  $searchEnv['RERANKER_SERVICE_URL'] = 'http://localhost:8094'
+  $searchEnv['RERANK_ENABLED'] = 'true'
+  $searchEnv['RERANKER_TIMEOUT_MS'] = '800'
+}
+$pids += Start-Svc -Title 'es-search' -WorkDir $search -EnvVars $searchEnv -RunCmd 'node dist\main.js'
 
 $gatewayEnv = @{
   PORT = '8081'; USE_FAKE_SEARCH = 'false'; SEARCH_SERVICE_URL = 'http://localhost:8080'; RAG_ENABLED = 'false'
@@ -181,6 +198,17 @@ if ($Rag) {
   } -RunCmd "& '$ingestVenvPy' -m uvicorn app.main:app --port 8092"
 }
 
+if ($Rerank) {
+  if (-not (Test-Path $rerankerVenvPy)) {
+    Write-Host 'reranker      : missing .venv - run: cd services\reranker; python -m venv .venv; .\.venv\Scripts\pip install -e .' -ForegroundColor Yellow
+  }
+  Write-Host 'reranker      : S14 on :8094 (cross-encoder; first start downloads the model).' -ForegroundColor DarkGray
+  $pids += Start-Svc -Title 'es-reranker' -WorkDir $rerankerDir -EnvVars @{
+    PORT = '8094'; USE_FAKE = 'false'; BACKEND = 'local'; RERANKER_MODEL = 'BAAI/bge-reranker-base'
+    DEVICE = 'cpu'; MAX_CANDIDATES = '50'; LATENCY_BUDGET_MS = '500'; LOG_LEVEL = 'info'
+  } -RunCmd "& '$rerankerVenvPy' -m uvicorn app.main:app --port 8094"
+}
+
 # Record host window PIDs so dev-down can close the windows precisely.
 $pidFile = Join-Path $PSScriptRoot '.dev-pids.json'
 $pids | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
@@ -201,6 +229,10 @@ $targets += @(
 )
 if ($Rag) {
   $targets += @{ Name = 'rag'; Url = 'http://localhost:8092/healthz'; Timeout = 30 }
+}
+if ($Rerank) {
+  # Model load can take a while on first boot.
+  $targets += @{ Name = 'reranker'; Url = 'http://localhost:8094/healthz'; Timeout = 180 }
 }
 Write-Host ''
 Write-Host 'Waiting for services to become healthy...' -ForegroundColor Cyan
@@ -226,10 +258,16 @@ Write-Host '  gateway     : http://localhost:8081        (widget api-base)'
 Write-Host '  ingestion   : http://localhost:8090/docs'
 if ($Rag) { Write-Host '  rag         : http://localhost:8092/docs   (Answers tab; POST /v1/answers via gateway)' }
 Write-Host '  analytics   : http://localhost:8093/docs   (reports; gateway logs query events)'
+if ($Rerank) { Write-Host '  reranker    : http://localhost:8094/docs   (S14; search RERANK_ENABLED=true)' }
 Write-Host ''
 if ($Rag) {
   Write-Host 'RAG is on. For real generative answers install Ollama (free) and pull a model:' -ForegroundColor Cyan
   Write-Host '  ollama pull llama3.2:1b     # otherwise answers degrade to extractive (top source)'
+  Write-Host ''
+}
+if ($Rerank) {
+  Write-Host 'Rerank is on globally (RERANK_ENABLED). Per-tenant toggle via Admin Relevance boosts:' -ForegroundColor Cyan
+  Write-Host '  { "rerankEnabled": true }'
   Write-Host ''
 }
 if ($RealConfig) {

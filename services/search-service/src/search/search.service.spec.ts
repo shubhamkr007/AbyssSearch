@@ -1,6 +1,7 @@
 import { type AppEnv, loadEnv } from '../config/env';
 import type { EsHit, JsonObject } from '../domain/types';
 import { FakeEmbeddingClient } from '../embedding/embedding.client';
+import { FakeRerankerClient } from '../rerank/reranker.client';
 import { FakeSearchBackend } from './fake.backend';
 import { SearchService } from './search.service';
 
@@ -10,11 +11,15 @@ function env(over: Partial<AppEnv> = {}): AppEnv {
   return { ...loadEnv(), ...over };
 }
 
-function build(over: Partial<AppEnv> = {}, vector: number[] | null = [0.1, 0.2]) {
+function build(
+  over: Partial<AppEnv> = {},
+  vector: number[] | null = [0.1, 0.2],
+  reranker: FakeRerankerClient = new FakeRerankerClient(),
+) {
   const backend = new FakeSearchBackend();
   const embedding = new FakeEmbeddingClient(vector);
-  const service = new SearchService(backend, embedding, env(over));
-  return { backend, embedding, service };
+  const service = new SearchService(backend, embedding, reranker, env(over));
+  return { backend, embedding, reranker, service };
 }
 
 describe('SearchService.search', () => {
@@ -120,6 +125,44 @@ describe('SearchService.search', () => {
     backend.bm25 = { total: 0, hits: [] };
     const res = await service.search({ tenant: 'acme', q: 'hello', size: 999 });
     expect(res.size).toBe(5);
+  });
+
+  it('reranks fused hits when rerankEnabled is set on the request', async () => {
+    const { backend, service } = build();
+    // Without rerank, RRF puts `b` first (in both legs). With lexical rerank on
+    // "alpha", doc `a` (title Alpha) should rise above the others.
+    backend.bm25 = {
+      total: 3,
+      hits: [
+        hit('b', { title: 'Bravo shared', body: 'shared' }),
+        hit('a', { title: 'Alpha', body: 'alpha body text' }),
+        hit('c', { title: 'Charlie', body: 'other' }),
+      ],
+    };
+    backend.knn = {
+      total: 2,
+      hits: [hit('b', { title: 'Bravo shared' }), hit('c', { title: 'Charlie' })],
+    };
+
+    const baseline = await service.search({ tenant: 'acme', q: 'alpha' });
+    expect(baseline.results[0]?.id).toBe('b');
+
+    const res = await service.search({ tenant: 'acme', q: 'alpha', rerankEnabled: true });
+    expect(res.results[0]?.id).toBe('a');
+    expect(res.degraded).toBe(false);
+  });
+
+  it('keeps RRF order and soft-degrades when the reranker fails', async () => {
+    const { backend, service } = build({}, [0.1, 0.2], new FakeRerankerClient(true));
+    backend.bm25 = {
+      total: 2,
+      hits: [hit('a', { title: 'Alpha' }), hit('b', { title: 'Bravo' })],
+    };
+    backend.knn = { total: 1, hits: [hit('b')] };
+
+    const res = await service.search({ tenant: 'acme', q: 'hello', rerankEnabled: true });
+    expect(res.results.map((r) => r.id)).toEqual(['b', 'a']);
+    expect(res.degradedReasons).toContain('rerank');
   });
 });
 

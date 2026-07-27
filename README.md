@@ -16,6 +16,7 @@ Everything in this stack is **open-source / zero license cost**.
 | **Analysis-ML (S8/S9)** | FastAPI — embeddings (`bge-small-en-v1.5`) + NER (spaCy) |
 | **RAG (S12)** | FastAPI — hybrid retrieve + grounded answers with citations |
 | **Analytics (S13)** | FastAPI — buffered event intake + reports (top queries, zero-results, CTR, latency) |
+| **Reranker (S14)** | FastAPI — optional cross-encoder second stage after hybrid RRF (`-Rerank`) |
 | **Admin Console (S11)** | React SPA — tenants, API keys, tabs, sources, relevance, ingest/NER jobs, live search preview, analytics |
 | **Data** | Elasticsearch (search/vectors + analytics); Postgres/SQLite for config/jobs |
 
@@ -88,6 +89,7 @@ More flags and details: [`scripts/README.md`](scripts/README.md)
 | ingestion | 8090 | `/docs` — ingest + analyze |
 | rag | 8092 | `/docs` — answers |
 | analytics | 8093 | `/docs` — search reports |
+| reranker (`-Rerank`) | 8094 | `/docs` — cross-encoder rerank |
 | **admin-console** | **5174** | `pnpm --filter @enterprise-search/admin dev` |
 | widget dev host | 5173 | `pnpm --filter @enterprise-search/widget dev` |
 | elasticsearch | 9200 | run natively |
@@ -144,6 +146,7 @@ curl "http://localhost:8093/reports/top-queries?tenant=demo&days=7" \
 - Post-index NER via `POST /jobs/analyze`
 - Answers tab with grounded citations (Ollama optional)
 - Search analytics: top queries, zero-result rate, click-through rate, latency percentiles
+- Optional cross-encoder reranking (S14) after hybrid fusion (`boosts.rerankEnabled` or `RERANK_ENABLED`)
 - Admin console for tenant/key/tab/source/relevance management + live search preview + analytics
 
 ## Repo layout
@@ -159,6 +162,7 @@ services/
   analysis-ml/         # S8 embedding + S9 NER
   rag/                 # S12 RAG answers
   analytics/           # S13 search analytics + reports
+  reranker/            # S14 cross-encoder rerank
 scripts/               # dev-up / dev-down / dev-status / verify-gaps
 infra/                 # docker-compose (Postgres, Valkey, Elasticsearch)
 docs/services/         # service specifications

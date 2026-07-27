@@ -18,6 +18,10 @@ import {
 } from '../embedding/embedding.client';
 import { VectorCache } from '../embedding/vector-cache';
 import { MetricsService } from '../metrics/metrics.service';
+import {
+  RERANKER_CLIENT,
+  type RerankerClient,
+} from '../rerank/reranker.client';
 import { SEARCH_BACKEND, type SearchBackend } from './backend';
 import type { DidYouMeanDto, SearchDto, SuggestDto } from './dto';
 import {
@@ -48,6 +52,7 @@ export class SearchService {
   constructor(
     @Inject(SEARCH_BACKEND) private readonly backend: SearchBackend,
     @Inject(EMBEDDING_CLIENT) private readonly embedding: EmbeddingClient,
+    @Inject(RERANKER_CLIENT) private readonly reranker: RerankerClient,
     @Inject(APP_ENV) private readonly env: AppEnv,
     @Optional() @Inject(MetricsService) private readonly metrics?: MetricsService,
   ) {
@@ -102,20 +107,23 @@ export class SearchService {
       }
     }
 
+    // Per-request flag (gateway) or global env when -Rerank is used.
+    const wantRerank = !browseAll && (dto.rerankEnabled === true || this.env.rerankEnabled);
+
     // 2) retrieval
     const tes = now();
     let outcome: RetrievalOutcome;
     try {
       if (browseAll) {
-        outcome = await this.runBm25Only(index, { ...params, q: '' });
+        outcome = await this.runBm25Only(index, { ...params, q: '' }, false);
       } else if (vector && this.env.hybridMode === 'native_rrf') {
-        outcome = await this.runNativeRrf(index, params, vector).catch(() =>
-          this.runClientRrf(index, params, vector),
+        outcome = await this.runNativeRrf(index, params, vector, wantRerank).catch(() =>
+          this.runClientRrf(index, params, vector, wantRerank),
         );
       } else if (vector) {
-        outcome = await this.runClientRrf(index, params, vector);
+        outcome = await this.runClientRrf(index, params, vector, wantRerank);
       } else {
-        outcome = await this.runBm25Only(index, params);
+        outcome = await this.runBm25Only(index, params, wantRerank);
       }
     } catch {
       // Total ES failure: return a degraded, empty result rather than erroring.
@@ -177,6 +185,7 @@ export class SearchService {
     index: string,
     params: SearchParams,
     vector: number[],
+    wantRerank = false,
   ): Promise<RetrievalOutcome> {
     const reasons: string[] = [];
     // BM25 leg fetches the fusion window (+ facets, highlight, did-you-mean).
@@ -207,13 +216,21 @@ export class SearchService {
     for (const h of knn?.hits ?? []) byId.set(h.id, h);
     for (const h of bm25?.hits ?? []) byId.set(h.id, h); // prefer BM25 (has highlight)
 
-    const pageSlice = fused.slice(params.from, params.from + params.size);
-    const hits = pageSlice
+    // Map the fusion window to items, optionally rerank, then paginate.
+    let windowItems = fused
       .map((f) => {
         const hit = byId.get(f.id);
         return hit ? this.toItem(hit, f.score) : null;
       })
       .filter((x): x is SearchResultItem => x !== null);
+
+    if (wantRerank) {
+      const reranked = await this.maybeRerank(params.q, windowItems);
+      windowItems = reranked.hits;
+      reasons.push(...reranked.degradedReasons);
+    }
+
+    const hits = windowItems.slice(params.from, params.from + params.size);
 
     const hybridMode: HybridModeUsed = bm25 && knn ? 'client_rrf' : bm25 ? 'bm25_only' : 'client_rrf';
     // Hybrid total = union of both legs. Using the fused (deduped) size as a floor
@@ -225,27 +242,110 @@ export class SearchService {
     return { hybridMode, hits, total, facets: bm25?.facets ?? {}, didYouMean, degradedReasons: reasons };
   }
 
-  private async runBm25Only(index: string, params: SearchParams): Promise<RetrievalOutcome> {
-    const body = buildBm25Body(params, this.cfg, { includeDidYouMean: true });
+  private async runBm25Only(
+    index: string,
+    params: SearchParams,
+    wantRerank = false,
+  ): Promise<RetrievalOutcome> {
+    const fetchParams = wantRerank
+      ? { ...params, from: 0, size: Math.max(params.size + params.from, this.env.rerankCandidates) }
+      : params;
+    const body = buildBm25Body(fetchParams, this.cfg, { includeDidYouMean: true });
     const res = await this.backend.search(index, body);
-    const hits = res.hits.map((h) => this.toItem(h, h.score));
+    let windowItems = res.hits.map((h) => this.toItem(h, h.score));
+    const reasons: string[] = [];
+    if (wantRerank) {
+      const reranked = await this.maybeRerank(params.q, windowItems);
+      windowItems = reranked.hits;
+      reasons.push(...reranked.degradedReasons);
+    }
+    const hits = wantRerank
+      ? windowItems.slice(params.from, params.from + params.size)
+      : windowItems;
     const didYouMean =
       res.total < this.env.didYouMeanThreshold ? this.pickDidYouMean(res, params.q) : null;
-    return { hybridMode: 'bm25_only', hits, total: res.total, facets: res.facets ?? {}, didYouMean };
+    return {
+      hybridMode: 'bm25_only',
+      hits,
+      total: res.total,
+      facets: res.facets ?? {},
+      didYouMean,
+      degradedReasons: reasons,
+    };
   }
 
   private async runNativeRrf(
     index: string,
     params: SearchParams,
     vector: number[],
+    wantRerank = false,
   ): Promise<RetrievalOutcome> {
-    const res = await this.backend.search(index, buildNativeRrfBody(params, this.cfg, vector));
-    const hits = res.hits.map((h) => this.toItem(h, h.score));
+    const fetchParams = wantRerank
+      ? { ...params, from: 0, size: Math.max(params.size + params.from, this.env.rerankCandidates) }
+      : params;
+    const res = await this.backend.search(index, buildNativeRrfBody(fetchParams, this.cfg, vector));
+    let windowItems = res.hits.map((h) => this.toItem(h, h.score));
+    const reasons: string[] = [];
+    if (wantRerank) {
+      const reranked = await this.maybeRerank(params.q, windowItems);
+      windowItems = reranked.hits;
+      reasons.push(...reranked.degradedReasons);
+    }
+    const hits = wantRerank
+      ? windowItems.slice(params.from, params.from + params.size)
+      : windowItems;
     const didYouMean =
       res.total < this.env.didYouMeanThreshold
         ? await this.didYouMean({ tenant: params.tenant, tenantId: params.tenantId, q: params.q, tab: params.tab }).then((r) => r.didYouMean)
         : null;
-    return { hybridMode: 'native_rrf', hits, total: res.total, facets: res.facets ?? {}, didYouMean };
+    return {
+      hybridMode: 'native_rrf',
+      hits,
+      total: res.total,
+      facets: res.facets ?? {},
+      didYouMean,
+      degradedReasons: reasons,
+    };
+  }
+
+  /**
+   * Optional S14 second stage. On skip/error returns the original order and a
+   * soft `rerank` degraded reason (search still succeeds).
+   */
+  private async maybeRerank(
+    query: string,
+    items: SearchResultItem[],
+  ): Promise<{ hits: SearchResultItem[]; degradedReasons: string[] }> {
+    if (items.length === 0) return { hits: items, degradedReasons: [] };
+    const window = items.slice(0, this.env.rerankCandidates);
+    const rest = items.slice(window.length);
+    const candidates = window.map((item) => ({
+      id: item.id,
+      text: [item.title, item.snippet].filter(Boolean).join(' ').slice(0, 2000),
+    }));
+    try {
+      const res = await this.reranker.rerank(query, candidates, window.length);
+      if (!res || res.skipped || !res.results?.length) {
+        return { hits: items, degradedReasons: ['rerank'] };
+      }
+      const byId = new Map(window.map((item) => [item.id, item]));
+      const ordered: SearchResultItem[] = [];
+      const seen = new Set<string>();
+      for (const r of res.results) {
+        const item = byId.get(r.id);
+        if (item && !seen.has(item.id)) {
+          seen.add(item.id);
+          ordered.push({ ...item, score: r.score });
+        }
+      }
+      // Append any candidates the reranker omitted, preserving relative order.
+      for (const item of window) {
+        if (!seen.has(item.id)) ordered.push(item);
+      }
+      return { hits: [...ordered, ...rest], degradedReasons: [] };
+    } catch {
+      return { hits: items, degradedReasons: ['rerank'] };
+    }
   }
 
   // ---- helpers -----------------------------------------------------------

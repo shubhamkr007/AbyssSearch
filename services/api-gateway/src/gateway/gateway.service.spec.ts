@@ -118,6 +118,35 @@ describe('GatewayService.doSearch', () => {
     analytics.fail = true;
     await expect(service.doSearch(CTX, { query: 'ok' })).resolves.toBeDefined();
   });
+
+  it('forwards boosts.rerankEnabled to the search service', async () => {
+    const { search, config, service } = build();
+    config.configs.set('t1', {
+      tenant: { id: 't1', name: 'Acme', prefix: 'acme', status: 'active' },
+      tabs: [],
+      searchConfig: {
+        synonyms: [],
+        boosts: { rerankEnabled: true },
+        facets: [],
+        suggestConfig: {},
+      },
+    });
+    await service.doSearch(CTX, { query: 'revenue' });
+    const sent = search.calls[0].payload as { rerankEnabled?: boolean };
+    expect(sent.rerankEnabled).toBe(true);
+  });
+
+  it('omits rerankEnabled when boosts flag is absent', async () => {
+    const { search, config, service } = build();
+    config.configs.set('t1', {
+      tenant: { id: 't1', name: 'Acme', prefix: 'acme', status: 'active' },
+      tabs: [],
+      searchConfig: { synonyms: [], boosts: {}, facets: [], suggestConfig: {} },
+    });
+    await service.doSearch(CTX, { query: 'revenue' });
+    const sent = search.calls[0].payload as { rerankEnabled?: boolean };
+    expect(sent.rerankEnabled).toBeUndefined();
+  });
 });
 
 describe('GatewayService.doEvents', () => {

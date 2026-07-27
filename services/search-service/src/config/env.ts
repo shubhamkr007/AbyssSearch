@@ -33,6 +33,13 @@ export interface AppEnv {
 
   /** Dev/test: use the in-memory fake backend + embedding client (no Elasticsearch needed). */
   useFake: boolean;
+
+  /** S14 optional cross-encoder second stage (after RRF). */
+  rerankerServiceUrl: string;
+  rerankerTimeoutMs: number;
+  /** Global default; per-request `rerankEnabled` from the gateway can also enable. */
+  rerankEnabled: boolean;
+  rerankCandidates: number;
 }
 
 function num(value: string | undefined, fallback: number): number {
@@ -86,5 +93,10 @@ export function loadEnv(): AppEnv {
     },
 
     useFake: bool(process.env.USE_FAKE, false),
+
+    rerankerServiceUrl: process.env.RERANKER_SERVICE_URL ?? '',
+    rerankerTimeoutMs: num(process.env.RERANKER_TIMEOUT_MS, 500),
+    rerankEnabled: bool(process.env.RERANK_ENABLED, false),
+    rerankCandidates: num(process.env.RERANK_CANDIDATES, 50),
   };
 }
