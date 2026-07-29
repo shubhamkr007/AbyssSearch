@@ -18,6 +18,8 @@ from app.schemas import (
     IngestJobRequest,
     JobCreatedResponse,
     JobView,
+    S3TestRequest,
+    S3TestResponse,
 )
 
 router = APIRouter(tags=["ingestion"])
@@ -44,6 +46,18 @@ def create_ingest_job(
         DOCS_INDEXED.inc(job.counts.ok)
         DOCS_FAILED.inc(job.counts.failed)
     return result
+
+
+@router.post(
+    "/connectors/s3:test",
+    response_model=S3TestResponse,
+    dependencies=[Depends(require_admin)],
+)
+def test_s3_connector(
+    body: S3TestRequest,
+    orch: Orchestrator = Depends(get_orchestrator),
+) -> S3TestResponse:
+    return orch.test_s3_connector(body)
 
 
 @router.post(

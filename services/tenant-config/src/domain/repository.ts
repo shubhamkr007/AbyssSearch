@@ -33,6 +33,13 @@ export interface CreateSourceInput {
   enabled: boolean;
 }
 
+export interface UpdateSourceInput {
+  name?: string;
+  connectorConfig?: Record<string, unknown>;
+  schedule?: string | null;
+  enabled?: boolean;
+}
+
 export interface TabInput {
   tabKey: string;
   label: string;
@@ -66,7 +73,9 @@ export interface TenantRepository {
   listApiKeys(tenantId: string): Promise<ApiKey[]>;
 
   getSources(tenantId: string): Promise<Source[]>;
+  getSource(tenantId: string, sourceId: string): Promise<Source | null>;
   createSource(input: CreateSourceInput): Promise<Source>;
+  updateSource(tenantId: string, sourceId: string, input: UpdateSourceInput): Promise<Source | null>;
 
   getTabs(tenantId: string): Promise<TabConfig[]>;
   replaceTabs(tenantId: string, tabs: TabInput[]): Promise<TabConfig[]>;

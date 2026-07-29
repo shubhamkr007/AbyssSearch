@@ -1,67 +1,96 @@
 # I4 - Object Storage (MinIO)
 
-> S3-compatible object storage for original documents, images, and generated thumbnails. Phase 1.
+> S3-compatible object storage for original documents, images, and generated thumbnails — and the first **document connector** target for Epic 2.2.
 
 ## 1. Role
 
 - Store binary/large content: original uploaded documents, source images, and generated thumbnails/derivatives.
 - Serve as the snapshot repository target for Elasticsearch backups.
 - Provide durable, addressable blobs referenced from ES documents (by object key/URL).
+- **Connector sync:** Admin-registered `s3` sources list/get objects from MinIO (or AWS S3) and upsert into `{prefix}-document`.
 
 ## 2. Technology
 
-- MinIO (S3 API). Swappable for AWS S3 / GCS / Azure Blob in cloud deployments (same S3 client code).
+- MinIO (S3 API). Swappable for AWS S3 / GCS / Azure Blob in cloud deployments (same S3 client code / `boto3`).
 
 ## 3. Bucket and key design
 
-- Per-tenant prefixing within buckets to keep isolation and lifecycle simple:
-  - `content/{tenantPrefix}/{sourceId}/{docId}` - originals
-  - `thumbnails/{tenantPrefix}/{docId}.jpg` - derivatives
-  - `es-snapshots/` - Elasticsearch snapshots
-- Object metadata carries `tenant_id` and content hash for integrity/dedup.
+- Bootstrap buckets (local): `content`, `thumbnails`, `es-snapshots`.
+- Per-tenant prefixing within buckets:
+  - `content/{tenantPrefix}/{sourceId}/{docId}` — originals (future write-back)
+  - Connector reads arbitrary prefixes (e.g. `demo/handbook/`) configured per source
+  - `thumbnails/{tenantPrefix}/{docId}.jpg` — derivatives
+  - `es-snapshots/` — Elasticsearch snapshots
 
 ## 4. Access pattern
 
-- Ingestion Workers write originals/thumbnails. The widget/gateway serve images via short-lived pre-signed URLs (never public buckets).
+- Ingestion Workers / Orchestrator read objects via the S3 connector (`ListObjectsV2` + `GetObject`).
+- Widget/gateway serve images via short-lived pre-signed URLs (never public buckets) — Phase follow-up.
 
 ## 5. Configuration and deployment
 
-- MVP: single MinIO (Compose) with a data volume and a console.
-- Production: distributed MinIO (erasure coding) or managed S3; versioning + lifecycle policies.
+- Local: Compose MinIO on `:9000` (API) / `:9001` (console), root `minioadmin` / `minioadmin`.
+- Start with `.\scripts\dev-up.ps1 -MinIO` (or `.\scripts\minio-up.ps1`); bootstrap creates buckets.
+- Platform fallbacks on ingestion: `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_REGION`.
+- Per-source credentials live in S4 `connectorConfig` (`accessKeyId` / `secretAccessKey`); list/get responses redact secrets unless `includeSecrets=true` (admin).
 
-Consumers: `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, bucket names.
+### Example connectorConfig
 
-## 6. Scaling and performance
+```json
+{
+  "endpoint": "http://127.0.0.1:9000",
+  "bucket": "content",
+  "prefix": "demo/handbook/",
+  "region": "us-east-1",
+  "accessKeyId": "minioadmin",
+  "secretAccessKey": "minioadmin",
+  "usePathStyle": true,
+  "includeSuffixes": [".txt", ".md", ".pdf"],
+  "maxKeys": 500
+}
+```
+
+## 6. Sync behaviour (ingestion)
+
+| Mode | Behaviour |
+|---|---|
+| `full` | List all matching keys → upsert → **delete** ES docs for this `source_id` whose keys disappeared |
+| `incremental` | Upsert objects with `LastModified` newer than checkpoint cursor (no deletes) |
+
+Natural key = object key relative to `prefix`. Indexed `source` is always `document` so Documents tabs keep working.
+
+## 7. Scaling and performance
 
 - Scales horizontally (distributed MinIO) or via managed object storage.
 - Use CDN in front of pre-signed thumbnail URLs for image-heavy tenants.
 
-## 7. Resilience
+## 8. Resilience
 
 - Versioning + lifecycle (expire old derivatives); erasure coding in production for durability.
+- Ingestion checkpoints (`source_id` + cursor JSON) survive process restarts.
 
-## 8. Security
+## 9. Security
 
 - Per-tenant access via scoped credentials or pre-signed URLs; no public buckets.
+- S4 never returns raw `secretAccessKey` on list/default GET.
 - Server-side encryption at rest; TLS in transit; private network.
 
-## 9. Observability
+## 10. Observability
 
 - MinIO metrics (Prometheus): bucket sizes, request rates/errors, replication status.
 
-## 10. Local development
+## 11. Local development
 
-- Compose MinIO with default dev credentials and a bootstrap script that creates buckets.
+```powershell
+.\scripts\minio-up.ps1
+# console: http://127.0.0.1:9001  (minioadmin / minioadmin)
+```
 
-## 11. Implementation steps (Phase 1)
-
-1. Add MinIO to Compose with a data volume and console.
-2. Bootstrap buckets (`content`, `thumbnails`, `es-snapshots`) and lifecycle rules.
-3. Wire Workers to store originals/thumbnails; implement pre-signed URL generation.
-4. Configure ES snapshot repository against MinIO.
+Then create an `s3` source in Admin Console → **Test** → **Run sync**.
 
 ## 12. Open questions / future work
 
 - Antivirus/malware scanning on upload.
+- Writing originals back to MinIO from inline ingest.
+- OCR / image pipelines; Celery beat schedules for connectors.
 - Client-side or field-level encryption for highly sensitive content.
-- Image derivative pipeline (multiple sizes) + CDN.

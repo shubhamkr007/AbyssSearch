@@ -54,6 +54,15 @@ class DeadLetterRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class CheckpointRow(Base):
+    __tablename__ = "checkpoints"
+
+    source_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    cursor: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 def create_db_engine(url: str):
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
     return create_engine(url, future=True, connect_args=connect_args)
@@ -171,6 +180,37 @@ class SqlAlchemyJobRepository:
                 error=row.error,
                 created_at=row.created_at,
             )
+
+    def get_checkpoint(self, source_id: str) -> dict[str, Any] | None:
+        with self._session() as s:
+            row = s.get(CheckpointRow, source_id)
+            if not row:
+                return None
+            return {
+                "source_id": row.source_id,
+                "tenant_id": row.tenant_id,
+                "cursor": dict(row.cursor or {}),
+                "updated_at": row.updated_at,
+            }
+
+    def save_checkpoint(self, source_id: str, tenant_id: str, cursor: dict[str, Any]) -> None:
+        with self._session() as s:
+            row = s.get(CheckpointRow, source_id)
+            now = utcnow()
+            if row:
+                row.tenant_id = tenant_id
+                row.cursor = dict(cursor)
+                row.updated_at = now
+            else:
+                s.add(
+                    CheckpointRow(
+                        source_id=source_id,
+                        tenant_id=tenant_id,
+                        cursor=dict(cursor),
+                        updated_at=now,
+                    )
+                )
+            s.commit()
 
     def ping(self) -> bool:
         try:

@@ -105,6 +105,10 @@ def resolve_autocomplete_index(tenant_prefix: str) -> str:
 class IndexBackend(Protocol):
     def ensure_index(self, alias: str, dims: int = 384) -> None: ...
     def bulk_upsert(self, index: str, docs: list[dict[str, Any]]) -> tuple[int, int, list[str]]: ...
+    def bulk_delete(self, index: str, ids: list[str]) -> int: ...
+    def find_by_source_id(
+        self, index: str, *, tenant_id: str, source_id: str, limit: int = 10000
+    ) -> list[tuple[str, dict[str, Any]]]: ...
     def search_documents(
         self,
         index: str,
@@ -173,6 +177,37 @@ class FakeIndexBackend:
             self.indices.add(index)
             ids.append(doc_id)
         return len(ids), 0, ids
+
+    def bulk_delete(self, index: str, ids: list[str]) -> int:
+        deleted = 0
+        for doc_id in ids:
+            body = self.docs.get(doc_id)
+            if not body:
+                continue
+            if body.get("_index") != index:
+                continue
+            del self.docs[doc_id]
+            deleted += 1
+        return deleted
+
+    def find_by_source_id(
+        self, index: str, *, tenant_id: str, source_id: str, limit: int = 10000
+    ) -> list[tuple[str, dict[str, Any]]]:
+        out: list[tuple[str, dict[str, Any]]] = []
+        for doc_id, body in self.docs.items():
+            if body.get("_index") != index:
+                continue
+            if body.get("tenant_id") != tenant_id:
+                continue
+            meta = body.get("metadata") or {}
+            if not isinstance(meta, dict):
+                continue
+            if str(meta.get("source_id") or "") != source_id:
+                continue
+            out.append((doc_id, dict(meta)))
+            if len(out) >= limit:
+                break
+        return out
 
     def search_documents(
         self,
@@ -354,6 +389,54 @@ class EsIndexBackend:
                     failed += 1
         ok = len(ids) - failed
         return ok, failed, ids
+
+    def bulk_delete(self, index: str, ids: list[str]) -> int:
+        if not ids:
+            return 0
+        actions: list[dict[str, Any]] = []
+        for doc_id in ids:
+            actions.append({"delete": {"_index": index, "_id": doc_id}})
+        try:
+            resp = self.client.bulk(operations=actions, refresh=True)
+        except Exception:
+            return 0
+        deleted = 0
+        for item in resp.get("items", []):
+            status = item.get("delete", {}).get("status")
+            if status in (200, 404):
+                deleted += 1
+        return deleted
+
+    def find_by_source_id(
+        self, index: str, *, tenant_id: str, source_id: str, limit: int = 10000
+    ) -> list[tuple[str, dict[str, Any]]]:
+        query: dict[str, Any] = {
+            "bool": {
+                "filter": [
+                    {"term": {"tenant_id": tenant_id}},
+                    {"term": {"metadata.source_id": source_id}},
+                ]
+            }
+        }
+        try:
+            resp = self.client.search(
+                index=index,
+                query=query,
+                size=min(limit, 10000),
+                source_includes=["metadata"],
+                ignore_unavailable=True,
+                allow_no_indices=True,
+            )
+        except Exception:
+            return []
+        out: list[tuple[str, dict[str, Any]]] = []
+        for hit in resp.get("hits", {}).get("hits", []):
+            src = hit.get("_source", {}) or {}
+            meta = src.get("metadata") or {}
+            if not isinstance(meta, dict):
+                meta = {}
+            out.append((str(hit.get("_id")), dict(meta)))
+        return out
 
     def search_documents(
         self,

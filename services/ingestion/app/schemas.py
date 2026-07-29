@@ -72,11 +72,30 @@ class IngestJobRequest(BaseModel):
     options: IngestOptions = Field(default_factory=IngestOptions)
     documents: list[InlineDocument] = Field(
         default_factory=list,
-        description="Inline docs for MVP; connector-based fetch is Phase 1.5.",
+        description="Inline docs, or omit when sourceId points at a connector.",
         min_length=0,
     )
 
     model_config = {"populate_by_name": True}
+
+
+class S3TestRequest(BaseModel):
+    """Probe an S3/MinIO bucket (list one page) without indexing."""
+
+    connector_config: dict[str, Any] | None = Field(default=None, alias="connectorConfig")
+    tenant_id: str | None = Field(default=None, alias="tenantId")
+    source_id: str | None = Field(default=None, alias="sourceId")
+
+    model_config = {"populate_by_name": True}
+
+
+class S3TestResponse(BaseModel):
+    ok: bool
+    bucket: str | None = None
+    prefix: str | None = None
+    listed: int = 0
+    sample_keys: list[str] = Field(default_factory=list)
+    message: str | None = None
 
 
 class BulkDocumentsRequest(BaseModel):

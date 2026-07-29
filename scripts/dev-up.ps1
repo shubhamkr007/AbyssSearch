@@ -13,6 +13,7 @@
     analytics (S13)               : 8093   (search reports; gateway logs query events)
     reranker (-Rerank)            : 8094   (S14 cross-encoder second stage after RRF)
     postgres (-RealConfig)        : 5432   (Docker container, volume enterprise-search-pgdata)
+    minio (-MinIO)                : 9000   (S3 API; console :9001)
 
   Elasticsearch is expected to already be running on :9200 (you run it natively).
 
@@ -37,6 +38,10 @@
   with RERANK_ENABLED=true. Loads BAAI/bge-reranker-base on CPU (slow first start).
   Per-tenant opt-in via searchConfig.boosts.rerankEnabled; global env enables for all.
 
+.PARAMETER MinIO
+  Start MinIO (S3-compatible) on :9000 / console :9001 and bootstrap content/
+  thumbnails/es-snapshots buckets. Required for the S3 source connector.
+
 .PARAMETER Build
   Force a rebuild of the Node services before starting.
 
@@ -50,12 +55,14 @@
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig -Seed
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -Rag
   powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -Rerank
+  powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig -MinIO
 #>
 param(
   [switch]$Embeddings,
   [switch]$RealConfig,
   [switch]$Rag,
   [switch]$Rerank,
+  [switch]$MinIO,
   [switch]$Build,
   [switch]$Seed
 )
@@ -153,6 +160,15 @@ if ($RealConfig) {
   Write-Host 'config        : seeded fake config (pass -RealConfig for real S4 + Postgres).' -ForegroundColor DarkGray
 }
 
+if ($MinIO) {
+  Write-Host 'minio         : S3 API on :9000 (console :9001).' -ForegroundColor DarkGray
+  $minioUp = Join-Path $PSScriptRoot 'minio-up.ps1'
+  & powershell.exe -ExecutionPolicy Bypass -File $minioUp
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host 'MinIO failed to start - S3 connector will not work until it is up.' -ForegroundColor Yellow
+  }
+}
+
 $searchEnv = @{
   PORT = '8080'; USE_FAKE = 'false'; ELASTICSEARCH_URL = 'http://localhost:9200'
   EMBEDDING_SERVICE_URL = 'http://localhost:8000'; LOG_LEVEL = 'info'
@@ -183,7 +199,12 @@ if ($Rag) {
 $pids += Start-Svc -Title 'es-gateway' -WorkDir $gateway -EnvVars $gatewayEnv -RunCmd 'node dist\main.js'
 
 $pids += Start-Svc -Title 'es-ingestion' -WorkDir $ingest -EnvVars @{
-  PORT = '8090'; USE_FAKE = 'false'; USE_INLINE = 'true'; ELASTICSEARCH_URL = 'http://localhost:9200'; NER_SERVICE_URL = 'http://localhost:8000'; EMBEDDING_SERVICE_URL = 'http://localhost:8000'; ADMIN_TOKEN = 'dev-admin-token'; DATABASE_URL = 'sqlite+pysqlite:///./ingestion.db'; LOG_LEVEL = 'info'
+  PORT = '8090'; USE_FAKE = 'false'; USE_INLINE = 'true'; ELASTICSEARCH_URL = 'http://localhost:9200'
+  NER_SERVICE_URL = 'http://localhost:8000'; EMBEDDING_SERVICE_URL = 'http://localhost:8000'
+  ADMIN_TOKEN = 'dev-admin-token'; DATABASE_URL = 'sqlite+pysqlite:///./ingestion.db'
+  CONFIG_SERVICE_URL = 'http://localhost:8001'
+  MINIO_ENDPOINT = 'http://127.0.0.1:9000'; MINIO_ACCESS_KEY = 'minioadmin'; MINIO_SECRET_KEY = 'minioadmin'
+  LOG_LEVEL = 'info'
 } -RunCmd "& '.\.venv\Scripts\python.exe' -m uvicorn app.main:app --port 8090"
 
 Write-Host 'analytics     : S13 on :8093 (search reports; gateway logs query events).' -ForegroundColor DarkGray
@@ -259,6 +280,9 @@ Write-Host '  ingestion   : http://localhost:8090/docs'
 if ($Rag) { Write-Host '  rag         : http://localhost:8092/docs   (Answers tab; POST /v1/answers via gateway)' }
 Write-Host '  analytics   : http://localhost:8093/docs   (reports; gateway logs query events)'
 if ($Rerank) { Write-Host '  reranker    : http://localhost:8094/docs   (S14; search RERANK_ENABLED=true)' }
+if ($MinIO) {
+  Write-Host '  minio       : http://localhost:9000        (console http://localhost:9001)'
+}
 Write-Host ''
 if ($Rag) {
   Write-Host 'RAG is on. For real generative answers install Ollama (free) and pull a model:' -ForegroundColor Cyan
@@ -268,6 +292,10 @@ if ($Rag) {
 if ($Rerank) {
   Write-Host 'Rerank is on globally (RERANK_ENABLED). Per-tenant toggle via Admin Relevance boosts:' -ForegroundColor Cyan
   Write-Host '  { "rerankEnabled": true }'
+  Write-Host ''
+}
+if ($MinIO) {
+  Write-Host 'MinIO is on. Create an S3 source in Admin (type=s3) pointing at bucket content.' -ForegroundColor Cyan
   Write-Host ''
 }
 if ($RealConfig) {

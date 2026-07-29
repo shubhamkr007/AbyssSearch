@@ -46,3 +46,7 @@ try {
 } catch { $pg = 'down' }
 $pgColor = if ($pg -like 'up*') { 'Green' } else { 'DarkGray' }
 Write-Host ("  {0,-14} {1,-28} {2}" -f 'postgres', 'localhost:5432', $pg) -ForegroundColor $pgColor
+
+$minio = Get-Health 'http://localhost:9000/minio/health/live'
+$minioColor = if ($minio -like 'up*') { 'Green' } else { 'DarkGray' }
+Write-Host ("  {0,-14} {1,-28} {2}" -f 'minio', 'http://localhost:9000', $minio) -ForegroundColor $minioColor

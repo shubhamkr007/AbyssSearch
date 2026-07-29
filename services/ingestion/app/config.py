@@ -17,11 +17,17 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
 
-    config_service_url: str = "http://localhost:8000"
+    config_service_url: str = "http://localhost:8001"
     elasticsearch_url: str = "http://localhost:9200"
     elasticsearch_api_key: str = ""
     embedding_service_url: str = "http://localhost:8000"
     ner_service_url: str = "http://localhost:8000"
+
+    # Platform fallbacks for S3/MinIO connectors when per-source keys are omitted.
+    minio_endpoint: str = "http://127.0.0.1:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_region: str = "us-east-1"
 
     max_bulk_batch: int = 100
     default_chunk_size: int = 800

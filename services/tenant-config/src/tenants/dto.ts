@@ -56,8 +56,8 @@ export class IssueKeyDto {
 
 export class CreateSourceDto {
   @IsString()
-  @Matches(/^(document|news|image|rest|db|folder)$/, {
-    message: 'type must be one of document|news|image|rest|db|folder',
+  @Matches(/^(document|news|image|rest|db|folder|s3)$/, {
+    message: 'type must be one of document|news|image|rest|db|folder|s3',
   })
   type!: string;
 
@@ -65,6 +65,26 @@ export class CreateSourceDto {
   @MinLength(1)
   @MaxLength(120)
   name!: string;
+
+  @IsOptional()
+  @IsObject()
+  connectorConfig?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  schedule?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+}
+
+export class UpdateSourceDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  name?: string;
 
   @IsOptional()
   @IsObject()

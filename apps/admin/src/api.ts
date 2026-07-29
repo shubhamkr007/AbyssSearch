@@ -277,10 +277,33 @@ export class AdminApi {
 
   createSource(
     id: string,
-    body: { type: string; name: string; schedule?: string | null; enabled?: boolean },
+    body: {
+      type: string;
+      name: string;
+      schedule?: string | null;
+      enabled?: boolean;
+      connectorConfig?: Record<string, unknown>;
+    },
   ): Promise<Source> {
     return this.req(`${this.s.adminApiBase}/tenants/${id}/sources`, {
       method: 'POST',
+      headers: this.adminHeaders(true),
+      body: JSON.stringify(body),
+    });
+  }
+
+  updateSource(
+    id: string,
+    sourceId: string,
+    body: {
+      name?: string;
+      schedule?: string | null;
+      enabled?: boolean;
+      connectorConfig?: Record<string, unknown>;
+    },
+  ): Promise<Source> {
+    return this.req(`${this.s.adminApiBase}/tenants/${id}/sources/${sourceId}`, {
+      method: 'PUT',
       headers: this.adminHeaders(true),
       body: JSON.stringify(body),
     });
@@ -305,6 +328,44 @@ export class AdminApi {
     documents: IngestDoc[];
   }): Promise<JobCreated> {
     return this.req(`${this.s.ingestBase}/jobs/ingest`, {
+      method: 'POST',
+      headers: this.adminHeaders(true),
+      body: JSON.stringify(body),
+    });
+  }
+
+  ingestFromSource(body: {
+    tenantId: string;
+    tenantPrefix?: string;
+    sourceId: string;
+    mode?: 'full' | 'incremental';
+  }): Promise<JobCreated> {
+    return this.req(`${this.s.ingestBase}/jobs/ingest`, {
+      method: 'POST',
+      headers: this.adminHeaders(true),
+      body: JSON.stringify({
+        tenantId: body.tenantId,
+        tenantPrefix: body.tenantPrefix,
+        sourceId: body.sourceId,
+        mode: body.mode ?? 'full',
+      }),
+    });
+  }
+
+  testS3Connector(body: {
+    connectorConfig?: Record<string, unknown>;
+    tenantId?: string;
+    sourceId?: string;
+  }): Promise<{
+    ok: boolean;
+    bucket?: string | null;
+    prefix?: string | null;
+    listed: number;
+    sample_keys?: string[];
+    sampleKeys?: string[];
+    message?: string | null;
+  }> {
+    return this.req(`${this.s.ingestBase}/connectors/s3:test`, {
       method: 'POST',
       headers: this.adminHeaders(true),
       body: JSON.stringify(body),

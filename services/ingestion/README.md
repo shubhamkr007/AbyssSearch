@@ -8,7 +8,8 @@ the same pipeline code; for local/dev/`USE_FAKE` the pipeline runs **inline** (n
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/jobs/ingest` | Start ingest job (inline documents in MVP) |
+| POST | `/jobs/ingest` | Start ingest job (inline documents **or** `sourceId` connector sync) |
+| POST | `/connectors/s3:test` | Probe S3/MinIO (list keys, no index) |
 | POST | `/jobs/analyze` | Post-index NER enrichment |
 | POST | `/jobs/build-suggest` | Rebuild word autocomplete terms from titles → `auto_complete-{prefix}` |
 | GET | `/jobs/{id}` | Job status + tasks |
@@ -39,6 +40,38 @@ curl -s localhost:8090/jobs/ingest \
       }
     ],
     "options": { "chunk": true, "enrich": true }
+  }'
+```
+
+### Example (S3 / MinIO source sync)
+
+Requires Tenant Config with an `s3` source and MinIO (`dev-up -MinIO`).
+
+```bash
+# Test connection (inline config)
+curl -s localhost:8090/connectors/s3:test \
+  -H 'x-admin-token: dev-admin-token' \
+  -H 'content-type: application/json' \
+  -d '{
+    "connectorConfig": {
+      "endpoint": "http://127.0.0.1:9000",
+      "bucket": "content",
+      "prefix": "demo/handbook/",
+      "accessKeyId": "minioadmin",
+      "secretAccessKey": "minioadmin",
+      "usePathStyle": true
+    }
+  }'
+
+# Full sync from a registered source
+curl -s localhost:8090/jobs/ingest \
+  -H 'x-admin-token: dev-admin-token' \
+  -H 'content-type: application/json' \
+  -d '{
+    "tenantId": "<tenant-uuid>",
+    "tenantPrefix": "acme",
+    "sourceId": "<source-id>",
+    "mode": "full"
   }'
 ```
 
@@ -99,10 +132,10 @@ pytest
 ```
 
 Coverage: stable doc ids, chunker, pipeline runner, orchestrator (inline + SQLite repo),
-HTTP API (auth, ingest, bulk, list).
+HTTP API (auth, ingest, bulk, list), S3 connector sync + checkpoint + delete reconcile.
 
 ## Notes / follow-ups
 
-- Connector-based `fetch` (folder/REST) and MinIO thumbnails are Phase 1.5.
-- S7 Celery beat schedules: next service after this MVP lands.
+- Additional connectors (folder/REST/DB) and MinIO write-back/thumbnails are follow-ups.
+- S7 Celery beat schedules for connectors: next after this MVP lands.
 - Production should use PostgreSQL (`DATABASE_URL`) and Valkey as the Celery broker.

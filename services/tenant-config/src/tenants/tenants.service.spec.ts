@@ -97,17 +97,51 @@ describe('TenantsService', () => {
     expect(cfg.facets).toEqual(['type']);
   });
 
-  it('creates and lists sources', async () => {
+  it('creates and lists sources with secrets redacted', async () => {
     const { service } = build();
     const tenant = await service.createTenant({ name: 'ACME', prefix: 'acme' }, 'tester');
-    await service.createSource(
+    const created = await service.createSource(
       tenant.id,
-      { type: 'document', name: 'Wiki', connectorConfig: { root: '/docs' } },
+      {
+        type: 's3',
+        name: 'Handbook',
+        connectorConfig: { bucket: 'content', secretAccessKey: 'super-secret' },
+      },
       'tester',
     );
+    expect(created.type).toBe('s3');
+    expect(created.connectorConfig.secretAccessKey).toBe('***');
+
     const sources = await service.getSources(tenant.id);
     expect(sources).toHaveLength(1);
-    expect(sources[0].type).toBe('document');
+    expect(sources[0].connectorConfig.secretAccessKey).toBe('***');
+
+    const revealed = await service.getSource(tenant.id, created.id, true);
+    expect(revealed.connectorConfig.secretAccessKey).toBe('super-secret');
+  });
+
+  it('updates sources without clobbering masked secrets', async () => {
+    const { service } = build();
+    const tenant = await service.createTenant({ name: 'ACME', prefix: 'acme2' }, 'tester');
+    const created = await service.createSource(
+      tenant.id,
+      {
+        type: 's3',
+        name: 'Docs',
+        connectorConfig: { bucket: 'content', secretAccessKey: 'keep-me' },
+      },
+      'tester',
+    );
+    await service.updateSource(
+      tenant.id,
+      created.id,
+      { name: 'Docs v2', connectorConfig: { prefix: 'acme/', secretAccessKey: '***' } },
+      'tester',
+    );
+    const revealed = await service.getSource(tenant.id, created.id, true);
+    expect(revealed.name).toBe('Docs v2');
+    expect(revealed.connectorConfig.prefix).toBe('acme/');
+    expect(revealed.connectorConfig.secretAccessKey).toBe('keep-me');
   });
 
   it('writes audit entries for mutations', async () => {

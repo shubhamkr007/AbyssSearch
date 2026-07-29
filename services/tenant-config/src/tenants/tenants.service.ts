@@ -32,8 +32,10 @@ import type {
   CreateTenantDto,
   IssueKeyDto,
   TabDto,
+  UpdateSourceDto,
   UpsertSearchConfigDto,
 } from './dto';
+import { redactSource, redactSourceForAudit } from './source-secrets';
 
 export interface PublicTenant {
   id: string;
@@ -156,7 +158,15 @@ export class TenantsService {
 
   async getSources(id: string): Promise<Source[]> {
     await this.requireTenant(id);
-    return this.repo.getSources(id);
+    const sources = await this.repo.getSources(id);
+    return sources.map(redactSource);
+  }
+
+  async getSource(id: string, sourceId: string, includeSecrets = false): Promise<Source> {
+    await this.requireTenant(id);
+    const source = await this.repo.getSource(id, sourceId);
+    if (!source) throw new NotFoundException(`source '${sourceId}' not found`);
+    return includeSecrets ? source : redactSource(source);
   }
 
   // ---- admin writes ------------------------------------------------------
@@ -302,10 +312,50 @@ export class TenantsService {
       tenantId: id,
       actor,
       action: 'source.create',
-      after: source,
+      after: redactSourceForAudit(source),
     });
     await this.cache.publishInvalidation({ type: 'sources.updated', tenantId: id });
-    return source;
+    return redactSource(source);
+  }
+
+  async updateSource(
+    id: string,
+    sourceId: string,
+    dto: UpdateSourceDto,
+    actor: string,
+  ): Promise<Source> {
+    await this.requireTenant(id);
+    const before = await this.repo.getSource(id, sourceId);
+    if (!before) throw new NotFoundException(`source '${sourceId}' not found`);
+
+    // If the client sends the masked placeholder, keep the existing secret.
+    let connectorConfig = dto.connectorConfig;
+    if (connectorConfig) {
+      const merged = { ...before.connectorConfig, ...connectorConfig };
+      for (const [key, value] of Object.entries(merged)) {
+        if (value === '***' && typeof before.connectorConfig[key] === 'string') {
+          merged[key] = before.connectorConfig[key];
+        }
+      }
+      connectorConfig = merged;
+    }
+
+    const source = await this.repo.updateSource(id, sourceId, {
+      name: dto.name,
+      connectorConfig,
+      schedule: dto.schedule,
+      enabled: dto.enabled,
+    });
+    if (!source) throw new NotFoundException(`source '${sourceId}' not found`);
+    await this.repo.addAudit({
+      tenantId: id,
+      actor,
+      action: 'source.update',
+      before: redactSourceForAudit(before),
+      after: redactSourceForAudit(source),
+    });
+    await this.cache.publishInvalidation({ type: 'sources.updated', tenantId: id });
+    return redactSource(source);
   }
 
   // ---- helpers -----------------------------------------------------------

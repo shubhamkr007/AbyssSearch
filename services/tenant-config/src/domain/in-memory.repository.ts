@@ -15,6 +15,7 @@ import type {
   SearchConfigInput,
   TabInput,
   TenantRepository,
+  UpdateSourceInput,
 } from './repository';
 
 /**
@@ -103,13 +104,40 @@ export class InMemoryTenantRepository implements TenantRepository {
   async getSources(tenantId: string): Promise<Source[]> {
     return [...this.sources.values()]
       .filter((s) => s.tenantId === tenantId)
-      .map((s) => ({ ...s }));
+      .map((s) => ({ ...s, connectorConfig: { ...s.connectorConfig } }));
+  }
+
+  async getSource(tenantId: string, sourceId: string): Promise<Source | null> {
+    const source = this.sources.get(sourceId);
+    if (!source || source.tenantId !== tenantId) return null;
+    return { ...source, connectorConfig: { ...source.connectorConfig } };
   }
 
   async createSource(input: CreateSourceInput): Promise<Source> {
     const source: Source = { id: randomUUID(), ...input };
     this.sources.set(source.id, source);
-    return { ...source };
+    return { ...source, connectorConfig: { ...source.connectorConfig } };
+  }
+
+  async updateSource(
+    tenantId: string,
+    sourceId: string,
+    input: UpdateSourceInput,
+  ): Promise<Source | null> {
+    const existing = this.sources.get(sourceId);
+    if (!existing || existing.tenantId !== tenantId) return null;
+    const next: Source = {
+      ...existing,
+      name: input.name ?? existing.name,
+      connectorConfig:
+        input.connectorConfig !== undefined
+          ? { ...existing.connectorConfig, ...input.connectorConfig }
+          : existing.connectorConfig,
+      schedule: input.schedule !== undefined ? input.schedule : existing.schedule,
+      enabled: input.enabled ?? existing.enabled,
+    };
+    this.sources.set(sourceId, next);
+    return { ...next, connectorConfig: { ...next.connectorConfig } };
   }
 
   async getTabs(tenantId: string): Promise<TabConfig[]> {

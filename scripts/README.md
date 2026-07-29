@@ -34,6 +34,14 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -Rag
 # Start with the Reranker (S14 cross-encoder second stage)
 powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -Rerank
 
+# Start with MinIO for the S3 connector (API :9000, console :9001)
+powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Embeddings -RealConfig -MinIO
+
+# MinIO only
+powershell -ExecutionPolicy Bypass -File scripts\minio-up.ps1
+powershell -ExecutionPolicy Bypass -File scripts\minio-down.ps1
+powershell -ExecutionPolicy Bypass -File scripts\minio-down.ps1 -Wipe
+
 # Force a rebuild of the Node services first
 powershell -ExecutionPolicy Bypass -File scripts\dev-up.ps1 -Build
 
@@ -66,6 +74,7 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-down.ps1
 | rag S12 (`-Rag`) | 8092 | `/docs`; grounded answers (Answers tab) |
 | analytics S13 | 8093 | `/docs`; search reports (top queries, zero-results, CTR, latency) |
 | reranker S14 (`-Rerank`) | 8094 | `/docs`; cross-encoder second stage (needs `services/reranker/.venv`) |
+| minio (`-MinIO` / `minio-up`) | 9000 | S3 API; console :9001 (`minioadmin`/`minioadmin`) |
 | postgres (`-RealConfig` / `pg-up`) | 5432 | Docker; volume `enterprise-search-pgdata` |
 | elasticsearch | 9200 | run natively (not managed by these scripts) |
 | admin-console S11 | 5174 | run separately: `pnpm --filter @enterprise-search/admin dev` |
@@ -97,6 +106,9 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-down.ps1
   `RERANK_ENABLED=true`. First boot downloads `BAAI/bge-reranker-base`. Per-tenant
   opt-in without the global flag: set Admin → Relevance → boosts to
   `{ "rerankEnabled": true }`. On timeout/error search keeps the RRF order.
+- **`-MinIO`** starts MinIO (S3-compatible) on :9000 / console :9001 and bootstraps
+  buckets `content`, `thumbnails`, `es-snapshots`. Use with Admin **Sources** type
+  `s3` to sync objects into `{prefix}-document`.
 
 ## Analytics (S13)
 

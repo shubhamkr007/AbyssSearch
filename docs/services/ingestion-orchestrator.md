@@ -31,7 +31,8 @@ flowchart LR
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/jobs/ingest` | Start ingestion (source id or inline payload); returns `jobId` |
+| POST | `/jobs/ingest` | Start ingestion (source id **or** inline payload); returns `jobId` |
+| POST | `/connectors/s3:test` | List one page from S3/MinIO (no index) |
 | POST | `/jobs/reindex` | Rebuild an index version and swap the alias |
 | POST | `/jobs/build-suggest` | Rebuild word autocomplete terms from titles into `auto_complete-{prefix}` |
 | POST | `/jobs/analyze` | Re-run enrichment over existing docs |
@@ -41,13 +42,25 @@ flowchart LR
 | GET | `/dead-letter` | List failed tasks for replay |
 | POST | `/dead-letter/{id}:replay` | Re-enqueue a failed task |
 
-Example `POST /jobs/ingest`:
+Example `POST /jobs/ingest` (inline):
 
 ```json
-{ "tenantId": "acme", "sourceId": "docs-folder-1", "mode": "full", "options": { "chunk": true } }
+{ "tenantId": "acme", "documents": [{ "title": "Hi", "body": "…", "source": "document" }] }
+```
+
+Example `POST /jobs/ingest` (S3 connector):
+
+```json
+{ "tenantId": "acme", "tenantPrefix": "acme", "sourceId": "src_…", "mode": "full", "options": { "chunk": true } }
 ```
 
 Response: `{ "jobId": "job_01H...", "status": "queued", "taskCount": 128 }`
+
+### S3 sync modes
+
+- `full` — list + upsert into `{prefix}-document` + delete stale keys for that `source_id`.
+- `incremental` — upsert by `LastModified` cursor only (no deletes).
+- Checkpoints persist under `checkpoints` (`last_modified`, `known_keys`).
 
 ## 5. Data owned / accessed
 
@@ -59,7 +72,7 @@ Response: `{ "jobId": "job_01H...", "status": "queued", "taskCount": 128 }`
 
 ## 7. Configuration (env)
 
-`PORT`, `DATABASE_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `CONFIG_SERVICE_URL`, `MAX_BULK_BATCH`, `DEFAULT_CHUNK_SIZE`, `DEFAULT_CHUNK_OVERLAP`, `LOG_LEVEL`.
+`PORT`, `DATABASE_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `CONFIG_SERVICE_URL`, `ADMIN_TOKEN`, `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_REGION`, `MAX_BULK_BATCH`, `DEFAULT_CHUNK_SIZE`, `DEFAULT_CHUNK_OVERLAP`, `LOG_LEVEL`.
 
 ## 8. Scaling and performance
 

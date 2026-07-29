@@ -17,6 +17,7 @@ import type {
   SearchConfigInput,
   TabInput,
   TenantRepository,
+  UpdateSourceInput,
 } from '../domain/repository';
 import { PrismaService } from './prisma.service';
 
@@ -81,6 +82,11 @@ export class PrismaTenantRepository implements TenantRepository {
     return rows.map((r) => this.mapSource(r));
   }
 
+  async getSource(tenantId: string, sourceId: string): Promise<Source | null> {
+    const row = await this.prisma.source.findFirst({ where: { id: sourceId, tenantId } });
+    return row ? this.mapSource(row) : null;
+  }
+
   async createSource(input: CreateSourceInput): Promise<Source> {
     const row = await this.prisma.source.create({
       data: {
@@ -90,6 +96,32 @@ export class PrismaTenantRepository implements TenantRepository {
         connectorConfig: input.connectorConfig as object,
         schedule: input.schedule,
         enabled: input.enabled,
+      },
+    });
+    return this.mapSource(row);
+  }
+
+  async updateSource(
+    tenantId: string,
+    sourceId: string,
+    input: UpdateSourceInput,
+  ): Promise<Source | null> {
+    const existing = await this.prisma.source.findFirst({ where: { id: sourceId, tenantId } });
+    if (!existing) return null;
+    const mergedConfig =
+      input.connectorConfig !== undefined
+        ? {
+            ...(existing.connectorConfig as Record<string, unknown>),
+            ...input.connectorConfig,
+          }
+        : undefined;
+    const row = await this.prisma.source.update({
+      where: { id: sourceId },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(mergedConfig !== undefined ? { connectorConfig: mergedConfig as object } : {}),
+        ...(input.schedule !== undefined ? { schedule: input.schedule } : {}),
+        ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
       },
     });
     return this.mapSource(row);

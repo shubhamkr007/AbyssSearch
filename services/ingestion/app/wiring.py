@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.clients.config import ConfigClient, FakeConfigClient
 from app.clients.enrich import FakeEmbedClient, FakeNerClient, HttpEmbedClient, HttpNerClient
 from app.clients.indexer import EsIndexBackend, FakeIndexBackend
 from app.config import Settings, get_settings
@@ -26,12 +27,18 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         embed: object = FakeEmbedClient()
         ner: object = FakeNerClient()
         indexer: object = FakeIndexBackend()
+        config_client: object = FakeConfigClient()
     else:
         embed = HttpEmbedClient(settings.embedding_service_url, settings.downstream_timeout_ms)
         ner = HttpNerClient(settings.ner_service_url, settings.downstream_timeout_ms)
         indexer = EsIndexBackend(
             settings.elasticsearch_url,
             settings.elasticsearch_api_key,
+            settings.downstream_timeout_ms,
+        )
+        config_client = ConfigClient(
+            settings.config_service_url,
+            settings.admin_token,
             settings.downstream_timeout_ms,
         )
 
@@ -48,4 +55,5 @@ def build_orchestrator(settings: Settings | None = None) -> Orchestrator:
         indexer=indexer,  # type: ignore[arg-type]
         settings=settings,
         enqueue_fn=enqueue_fn,
+        config_client=config_client,  # type: ignore[arg-type]
     )

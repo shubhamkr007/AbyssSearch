@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.clients.config import ConfigClient, FakeConfigClient
 from app.clients.enrich import EmbedClient, NerClient
 from app.clients.indexer import IndexBackend
 from app.config import Settings
+from app.connectors.s3 import build_s3_connector
 from app.domain import DeadLetterRecord, JobRecord, TaskRecord, new_id, utcnow
 from app.pipeline.entities import group_entities
 from app.pipeline.runner import run_pipeline
@@ -25,9 +27,17 @@ from app.schemas import (
     JobStatus,
     JobType,
     JobView,
+    S3TestRequest,
+    S3TestResponse,
     TaskKind,
     TaskStatus,
     TaskView,
+)
+from app.sync import (
+    CheckpointCursor,
+    fetch_documents,
+    next_checkpoint,
+    reconcile_deletes,
 )
 
 # NER services cap batch size (analysis-ml default max is 32); stay well under.
@@ -43,6 +53,7 @@ class Orchestrator:
         indexer: IndexBackend,
         settings: Settings,
         enqueue_fn=None,
+        config_client: ConfigClient | FakeConfigClient | None = None,
     ) -> None:
         self.repo = repo
         self.embed = embed
@@ -50,10 +61,17 @@ class Orchestrator:
         self.indexer = indexer
         self.settings = settings
         self.enqueue_fn = enqueue_fn
+        self.config_client = config_client or ConfigClient(
+            settings.config_service_url,
+            settings.admin_token,
+            settings.downstream_timeout_ms,
+        )
 
     def start_ingest(self, req: IngestJobRequest) -> JobCreatedResponse:
+        if req.source_id and not req.documents:
+            return self._start_connector_ingest(req)
         if not req.documents:
-            raise ValueError("documents required for MVP ingest (connector fetch is Phase 1.5)")
+            raise ValueError("documents or sourceId required")
 
         prefix = req.tenant_prefix or req.tenant_id
         job = JobRecord(
@@ -96,6 +114,202 @@ class Orchestrator:
             status=refreshed.status,
             taskCount=len(tasks),
         )
+
+    def _start_connector_ingest(self, req: IngestJobRequest) -> JobCreatedResponse:
+        assert req.source_id
+        mode = (req.mode or "full").lower()
+        if mode not in ("full", "incremental"):
+            raise ValueError("mode must be 'full' or 'incremental'")
+
+        prefix = req.tenant_prefix or req.tenant_id
+        job = JobRecord(
+            id=new_id("job_"),
+            tenant_id=req.tenant_id,
+            tenant_prefix=prefix,
+            source_id=req.source_id,
+            type=JobType.INGEST.value,
+            status=JobStatus.QUEUED.value,
+            counts={"total": 0, "ok": 0, "failed": 0, "skipped": 0},
+            options=req.options.model_dump(),
+            payload={"mode": mode, "sourceId": req.source_id, "connector": True},
+        )
+        self.repo.create_job(job)
+
+        task = TaskRecord(
+            id=new_id("task_"),
+            job_id=job.id,
+            kind=TaskKind.FETCH.value,
+            status=TaskStatus.QUEUED.value,
+            payload={"mode": mode, "sourceId": req.source_id},
+        )
+        self.repo.create_task(task)
+
+        # Connector sync runs inline (Celery path only covers pipeline batches today).
+        self.run_connector_task(job.id, task.id)
+
+        refreshed = self.repo.get_job(job.id)
+        assert refreshed is not None
+        return JobCreatedResponse(
+            jobId=refreshed.id,
+            status=refreshed.status,
+            taskCount=1,
+        )
+
+    def test_s3_connector(self, req: S3TestRequest) -> S3TestResponse:
+        config: dict[str, Any]
+        if req.connector_config:
+            config = dict(req.connector_config)
+        elif req.tenant_id and req.source_id:
+            try:
+                source = self.config_client.get_source(
+                    req.tenant_id, req.source_id, include_secrets=True
+                )
+            except Exception as exc:  # noqa: BLE001
+                return S3TestResponse(ok=False, message=f"config lookup failed: {exc}")
+            if str(source.get("type") or "") != "s3":
+                return S3TestResponse(ok=False, message="source type is not s3")
+            config = dict(source.get("connectorConfig") or {})
+        else:
+            return S3TestResponse(
+                ok=False,
+                message="provide connectorConfig or tenantId+sourceId",
+            )
+
+        try:
+            connector = build_s3_connector(config, self.settings)
+            objects = connector.list_objects(max_keys=min(25, connector.max_keys))
+        except Exception as exc:  # noqa: BLE001
+            return S3TestResponse(ok=False, message=str(exc))
+
+        return S3TestResponse(
+            ok=True,
+            bucket=connector.bucket,
+            prefix=connector.prefix or None,
+            listed=len(objects),
+            sample_keys=[o.key for o in objects[:10]],
+            message=f"listed {len(objects)} object(s)",
+        )
+
+    def run_connector_task(self, job_id: str, task_id: str) -> None:
+        job = self.repo.get_job(job_id)
+        task = self.repo.get_task(task_id)
+        if not job or not task:
+            return
+
+        task.status = TaskStatus.RUNNING.value
+        task.attempts += 1
+        task.updated_at = utcnow()
+        self.repo.update_task(task)
+        job.status = JobStatus.RUNNING.value
+        self.repo.update_job(job)
+
+        source_id = str(task.payload.get("sourceId") or job.source_id or "")
+        mode = str(task.payload.get("mode") or "full").lower()
+
+        try:
+            source = self.config_client.get_source(job.tenant_id, source_id, include_secrets=True)
+            if str(source.get("type") or "") != "s3":
+                raise ValueError(f"unsupported connector type '{source.get('type')}'")
+            if source.get("enabled") is False:
+                raise ValueError("source is disabled")
+
+            config = dict(source.get("connectorConfig") or {})
+            connector = build_s3_connector(config, self.settings)
+            bucket = connector.bucket
+
+            cp_row = self.repo.get_checkpoint(source_id)
+            previous = CheckpointCursor.from_dict((cp_row or {}).get("cursor"))
+            fetch = fetch_documents(
+                connector,
+                source_id=source_id,
+                bucket=bucket,
+                mode=mode,
+                checkpoint=previous,
+            )
+
+            ok = 0
+            failed = 0
+            if fetch.documents:
+                result = run_pipeline(
+                    tenant_id=job.tenant_id,
+                    tenant_prefix=job.tenant_prefix,
+                    documents=fetch.documents,
+                    embed=self.embed,
+                    ner=self.ner,
+                    indexer=self.indexer,
+                    chunk=bool(job.options.get("chunk", True)),
+                    enrich=bool(job.options.get("enrich", True)),
+                    ensure_index=bool(job.options.get("ensure_index", True)),
+                    chunk_size=self.settings.default_chunk_size,
+                    chunk_overlap=self.settings.default_chunk_overlap,
+                )
+                ok = int(result["ok"])
+                failed = int(result["failed"])
+
+            deleted = 0
+            if mode == "full":
+                deleted = reconcile_deletes(
+                    self.indexer,
+                    tenant_prefix=job.tenant_prefix,
+                    tenant_id=job.tenant_id,
+                    source_id=source_id,
+                    seen_keys=fetch.seen_keys,
+                )
+
+            cursor = next_checkpoint(mode, previous, fetch)
+            self.repo.save_checkpoint(source_id, job.tenant_id, cursor.to_dict())
+
+            task.status = TaskStatus.SUCCEEDED.value
+            task.error = None
+            task.payload = {
+                **task.payload,
+                "result": {
+                    "listed": len(fetch.seen_keys),
+                    "upserted_docs": len(fetch.documents),
+                    "ok": ok,
+                    "failed": failed,
+                    "skipped": fetch.skipped,
+                    "deleted": deleted,
+                    "mode": mode,
+                },
+            }
+            task.updated_at = utcnow()
+            self.repo.update_task(task)
+
+            job.counts = {
+                "total": len(fetch.documents),
+                "ok": ok,
+                "failed": failed,
+                "skipped": fetch.skipped,
+            }
+            job.payload = {
+                **job.payload,
+                "deleted": deleted,
+                "listed": len(fetch.seen_keys),
+            }
+            self.repo.update_job(job)
+        except Exception as exc:  # noqa: BLE001
+            task.status = TaskStatus.FAILED.value
+            task.error = str(exc)
+            task.updated_at = utcnow()
+            self.repo.update_task(task)
+            job.counts["failed"] = int(job.counts.get("failed", 0)) + 1
+            self.repo.update_job(job)
+            self.repo.add_dead_letter(
+                DeadLetterRecord(
+                    id=new_id("dl_"),
+                    task_id=task.id,
+                    payload={
+                        "tenant_id": job.tenant_id,
+                        "tenant_prefix": job.tenant_prefix,
+                        "source_id": source_id,
+                        "mode": mode,
+                    },
+                    error=str(exc),
+                )
+            )
+
+        self._finalize_job(job_id)
 
     def start_analyze(self, req: AnalyzeJobRequest) -> JobCreatedResponse:
         """Create an ANALYZE job that (re)generates typed entities for indexed docs."""

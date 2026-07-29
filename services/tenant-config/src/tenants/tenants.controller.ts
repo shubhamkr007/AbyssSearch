@@ -9,6 +9,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -21,6 +22,7 @@ import {
   CreateTenantDto,
   IssueKeyDto,
   SetTabsDto,
+  UpdateSourceDto,
   UpsertSearchConfigDto,
   VerifyKeyDto,
 } from './dto';
@@ -83,9 +85,22 @@ export class TenantsController {
   }
 
   @Get('tenants/:id/sources')
+  @UseGuards(AdminGuard)
   async getSources(@Param('id') id: string) {
     this.metrics?.configReads.inc({ endpoint: 'sources' });
     return this.tenants.getSources(id);
+  }
+
+  @Get('tenants/:id/sources/:sourceId')
+  @UseGuards(AdminGuard)
+  async getSource(
+    @Param('id') id: string,
+    @Param('sourceId') sourceId: string,
+    @Query('includeSecrets') includeSecrets?: string,
+  ) {
+    this.metrics?.configReads.inc({ endpoint: 'source' });
+    const reveal = includeSecrets === '1' || includeSecrets === 'true';
+    return this.tenants.getSource(id, sourceId, reveal);
   }
 
   // ---- admin writes ------------------------------------------------------
@@ -150,5 +165,17 @@ export class TenantsController {
   ) {
     this.metrics?.adminWrites.inc({ action: 'source.create' });
     return this.tenants.createSource(id, dto, actorFrom(req));
+  }
+
+  @Put('tenants/:id/sources/:sourceId')
+  @UseGuards(AdminGuard)
+  async updateSource(
+    @Param('id') id: string,
+    @Param('sourceId') sourceId: string,
+    @Body() dto: UpdateSourceDto,
+    @Req() req: Request,
+  ) {
+    this.metrics?.adminWrites.inc({ action: 'source.update' });
+    return this.tenants.updateSource(id, sourceId, dto, actorFrom(req));
   }
 }

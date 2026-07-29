@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
-from app.domain import DeadLetterRecord, JobRecord, TaskRecord
+from app.domain import DeadLetterRecord, JobRecord, TaskRecord, utcnow
 
 
 class JobRepository(Protocol):
@@ -19,6 +19,8 @@ class JobRepository(Protocol):
     def add_dead_letter(self, entry: DeadLetterRecord) -> DeadLetterRecord: ...
     def list_dead_letter(self, limit: int = 50) -> list[DeadLetterRecord]: ...
     def get_dead_letter(self, entry_id: str) -> DeadLetterRecord | None: ...
+    def get_checkpoint(self, source_id: str) -> dict[str, Any] | None: ...
+    def save_checkpoint(self, source_id: str, tenant_id: str, cursor: dict[str, Any]) -> None: ...
     def ping(self) -> bool: ...
 
 
@@ -29,6 +31,7 @@ class InMemoryJobRepository:
         self.jobs: dict[str, JobRecord] = {}
         self.tasks: dict[str, TaskRecord] = {}
         self.dead_letter: dict[str, DeadLetterRecord] = {}
+        self.checkpoints: dict[str, dict[str, Any]] = {}
 
     def create_job(self, job: JobRecord) -> JobRecord:
         self.jobs[job.id] = job
@@ -76,6 +79,18 @@ class InMemoryJobRepository:
 
     def get_dead_letter(self, entry_id: str) -> DeadLetterRecord | None:
         return self.dead_letter.get(entry_id)
+
+    def get_checkpoint(self, source_id: str) -> dict[str, Any] | None:
+        row = self.checkpoints.get(source_id)
+        return dict(row) if row else None
+
+    def save_checkpoint(self, source_id: str, tenant_id: str, cursor: dict[str, Any]) -> None:
+        self.checkpoints[source_id] = {
+            "source_id": source_id,
+            "tenant_id": tenant_id,
+            "cursor": dict(cursor),
+            "updated_at": utcnow(),
+        }
 
     def ping(self) -> bool:
         return True
