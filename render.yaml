@@ -1,6 +1,7 @@
 # Render Blueprint — demo API Gateway (free tier)
 # Dashboard: New > Blueprint > connect this repo.
-# Delete the duplicate manual service "abyss-api-gateway" if it exists (broken build command).
+# Delete the duplicate manual service "abyss-api-gateway" if it exists.
+# If you keep it, set Build Command to: bash scripts/render-build-gateway.sh
 
 services:
   - type: web
