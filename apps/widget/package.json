@@ -14,7 +14,7 @@
   "sideEffects": ["./dist/enterprise-search.js"],
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "build": "tsc --noEmit -p tsconfig.json && vite build && node scripts/copy-static.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "tsc --noEmit -p tsconfig.json"

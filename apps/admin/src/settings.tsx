@@ -17,11 +17,11 @@ export interface Settings {
 const STORAGE_KEY = 'abyss-admin-settings';
 
 export const DEFAULT_SETTINGS: Settings = {
-  adminApiBase: 'http://localhost:8001',
-  ingestBase: 'http://localhost:8090',
-  gatewayBase: 'http://localhost:8081',
-  analyticsBase: 'http://localhost:8093',
-  adminToken: 'dev-admin-token',
+  adminApiBase: import.meta.env.VITE_ADMIN_API_BASE ?? 'http://localhost:8001',
+  ingestBase: import.meta.env.VITE_INGEST_BASE ?? 'http://localhost:8090',
+  gatewayBase: import.meta.env.VITE_GATEWAY_BASE ?? 'http://localhost:8081',
+  analyticsBase: import.meta.env.VITE_ANALYTICS_BASE ?? 'http://localhost:8093',
+  adminToken: import.meta.env.VITE_ADMIN_TOKEN ?? 'dev-admin-token',
 };
 
 function load(): Settings {

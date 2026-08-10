@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AbyssSearch — Widget Demo (offline)</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; background: #f4f5f7; color: #1f2328; }
+      .wrap { max-width: 820px; margin: 0 auto; padding: 32px 16px 64px; }
+      h1 { text-align: center; font-size: 1.75rem; }
+      .banner {
+        background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+        padding: 14px 16px; font-size: 14px; color: #4b5563; margin-bottom: 28px;
+      }
+      .banner a { color: #2563eb; }
+      section { margin-top: 36px; }
+      h2 { font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }
+      code { background: #e5e7eb; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>AbyssSearch Widget</h1>
+      <p class="banner">
+        <strong>Offline demo</strong> — built-in fake gateway, no backend required.
+        Try the <a href="live.html">live API demo</a> to hit the Render gateway (may cold-start after idle).
+      </p>
+
+      <section>
+        <h2>Default theme</h2>
+        <enterprise-search tenant-key="pk_test_demo" api-base="demo" placeholder="Search everything…">
+        </enterprise-search>
+      </section>
+
+      <section>
+        <h2>Custom theme</h2>
+        <enterprise-search
+          tenant-key="pk_test_demo"
+          api-base="demo"
+          placeholder="Search Acme…"
+          theme='{"primary":"#7c3aed","accent":"#f3e8ff","radius":"8px"}'
+          tabs='[{"key":"all","label":"Everything"},{"key":"documents","label":"Docs"},{"key":"news","label":"News"}]'>
+        </enterprise-search>
+      </section>
+    </div>
+    <script type="module" src="./enterprise-search.js"></script>
+  </body>
+</html>
