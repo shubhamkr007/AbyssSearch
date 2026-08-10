@@ -1,15 +1,15 @@
 # Render Blueprint — demo API Gateway (free tier)
-# Sync via Dashboard: New > Blueprint > connect repo, or use Render CLI.
-# https://dashboard.render.com/blueprints
+# Dashboard: New > Blueprint > connect this repo.
+# Delete the duplicate manual service "abyss-api-gateway" if it exists (broken build command).
 
 services:
   - type: web
-    name: abyss-api-gateway
+    name: abyss-search-gateway
     runtime: node
     plan: free
     region: oregon
     branch: main
-    buildCommand: NODE_ENV=development npx pnpm@9.15.9 install && npx pnpm@9.15.9 --filter @enterprise-search/api-gateway build
+    buildCommand: bash scripts/render-build-gateway.sh
     startCommand: NODE_ENV=production node services/api-gateway/dist/main.js
     healthCheckPath: /healthz
     envVars:
@@ -23,7 +23,5 @@ services:
         value: "false"
       - key: ANALYTICS_ENABLED
         value: "false"
-      - key: NODE_ENV
-        value: production
       - key: NODE_VERSION
         value: "20"
